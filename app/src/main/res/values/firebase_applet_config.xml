@@ -1,4 +1,9 @@
-<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="firestore_database_id" translatable="false">ai-studio-android-scan2mon-1108e522-ebfd-48b3-b7e4-97e79b793307</string>
+    <string name="firebase_project_id" translatable="false">sharp-ceiling-nflln</string>
+    <string name="firebase_app_id" translatable="false">1:300226852296:web:0bf2abf6b3cf8c65cc7cfd</string>
+    <string name="firebase_api_key" translatable="false">AIzaSyBxDpNjgLX6PmMPR6VY_sMEyuMr9SE_gs8</string>
+    <string name="firebase_database_id" translatable="false">ai-studio-myappstoseeqr-59e06b40-9b23-4423-90ae-e7548bc03d86</string>
+    <string name="firebase_storage_bucket" translatable="false">sharp-ceiling-nflln.firebasestorage.app</string>
+    <string name="firebase_messaging_sender_id" translatable="false">300226852296</string>
 </resources>

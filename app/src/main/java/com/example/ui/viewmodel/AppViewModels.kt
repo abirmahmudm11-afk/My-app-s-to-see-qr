@@ -1,387 +1,668 @@
 package com.example.ui.viewmodel
 
-import android.util.Log
+import android.content.Context
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.data.local.AppPreferencesDataStore
-import com.example.data.local.UserPreferencesState
 import com.example.data.model.AdminRole
 import com.example.data.model.AppNotification
+import com.example.data.model.AppPreferences
 import com.example.data.model.AuditLog
 import com.example.data.model.Campaign
 import com.example.data.model.CampaignStatus
 import com.example.data.model.CatalogProduct
+import com.example.data.model.DeletionRequest
+import com.example.data.model.PayoutMethod
+import com.example.data.model.PayoutRequest
+import com.example.data.model.PayoutStatus
 import com.example.data.model.ReceiptSubmission
 import com.example.data.model.RewardTransaction
 import com.example.data.model.RewardWallet
+import com.example.data.model.ScanContext
 import com.example.data.model.ScanRecord
 import com.example.data.model.UserProfile
-import com.example.data.model.VerificationStatus
-import com.example.data.repository.AdminRepository
-import com.example.data.repository.ProductRepository
-import com.example.data.repository.ReceiptAndCampaignRepository
-import com.example.data.repository.UserWalletRepository
-import com.example.domain.MarketCatalog
-import com.google.firebase.firestore.FirebaseFirestoreException
-import kotlinx.coroutines.CancellationException
+import com.example.di.AppContainer
+import com.example.domain.MarketConfig
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-sealed interface UiState<out T> {
-    data object Loading : UiState<Nothing>
-    data class Success<T>(val data: T) : UiState<T>
-    data class Error(val message: String) : UiState<Nothing>
-}
+data class MainUiState(
+  val firebaseUser: FirebaseUser? = null,
+  val preferences: AppPreferences = AppPreferences(),
+  val userProfile: UserProfile? = null,
+  val wallet: RewardWallet = RewardWallet(),
+  val transactions: List<RewardTransaction> = emptyList(),
+  val receipts: List<ReceiptSubmission> = emptyList(),
+  val payoutRequests: List<PayoutRequest> = emptyList(),
+  val notifications: List<AppNotification> = emptyList(),
+  val campaigns: List<Campaign> = emptyList(),
+  val recentScans: List<ScanRecord> = emptyList(),
+  val cachedCatalog: List<CatalogProduct> = emptyList(),
+  val adminRole: AdminRole? = null,
+  val allUsers: List<UserProfile> = emptyList(),
+  val allPayoutRequests: List<PayoutRequest> = emptyList(),
+  val pendingReceipts: List<ReceiptSubmission> = emptyList(),
+  val allReceipts: List<ReceiptSubmission> = emptyList(),
+  val allCampaigns: List<Campaign> = emptyList(),
+  val unverifiedCatalog: List<CatalogProduct> = emptyList(),
+  val deletionRequests: List<DeletionRequest> = emptyList(),
+  val auditLogs: List<AuditLog> = emptyList(),
+  val searchResults: List<CatalogProduct> = emptyList(),
+  val isSearching: Boolean = false,
+  val isSigningIn: Boolean = false,
+  val activeScanContext: ScanContext? = null,
+  val feedbackMessage: String? = null,
+)
 
-private fun <T> Flow<T>.toUiStateFlow(tag: String): Flow<UiState<T>> =
-    map<T, UiState<T>> { UiState.Success(it) }
-        .catch { error ->
-            val firestoreError = generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(tag, "Stream error", rootError)
-            emit(UiState.Error(rootError.message ?: "Unable to load data"))
+private data class CoreSessionData(
+  val user: FirebaseUser?,
+  val prefs: AppPreferences,
+  val profile: UserProfile?,
+  val wallet: RewardWallet,
+  val transactions: List<RewardTransaction>,
+)
+
+private data class SecondarySessionData(
+  val receipts: List<ReceiptSubmission>,
+  val payoutRequests: List<PayoutRequest>,
+  val notifications: List<AppNotification>,
+  val campaigns: List<Campaign>,
+  val cloudScans: List<ScanRecord>,
+  val localScans: List<ScanRecord>,
+  val cachedCatalog: List<CatalogProduct>,
+)
+
+private data class AdminSessionData(
+  val role: AdminRole?,
+  val allUsers: List<UserProfile>,
+  val allPayoutRequests: List<PayoutRequest>,
+  val pendingReceipts: List<ReceiptSubmission>,
+  val allReceipts: List<ReceiptSubmission>,
+  val allCampaigns: List<Campaign>,
+  val unverifiedCatalog: List<CatalogProduct>,
+  val deletionRequests: List<DeletionRequest>,
+  val auditLogs: List<AuditLog>,
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MainAppViewModel(private val container: AppContainer) : ViewModel() {
+  private val authUserFlow = MutableStateFlow(container.auth.currentUser)
+  private val adminRoleFlow = MutableStateFlow<AdminRole?>(null)
+  private val searchResultsFlow = MutableStateFlow<List<CatalogProduct>>(emptyList())
+  private val isSearchingFlow = MutableStateFlow(false)
+  private val isSigningInFlow = MutableStateFlow(false)
+  private val activeScanContextFlow = MutableStateFlow<ScanContext?>(null)
+  private val feedbackMessageFlow = MutableStateFlow<String?>(null)
+
+  private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+    val user = firebaseAuth.currentUser
+    authUserFlow.value = user
+    if (user != null) {
+      viewModelScope.launch {
+        runCatching {
+          val prefs = prefsState.value
+          container.userWalletRepository.ensureAccountInitialized(
+            userId = user.uid,
+            displayName = user.displayName ?: user.email?.substringBefore("@") ?: "Shopper",
+            countryCode = prefs.countryCode,
+            languageCode = prefs.languageCode,
+          )
         }
-
-class PreferencesViewModel(
-    private val prefs: AppPreferencesDataStore
-) : ViewModel() {
-    val preferences: StateFlow<UserPreferencesState> = prefs.preferencesFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UserPreferencesState())
-
-    fun completeOnboarding() {
-        viewModelScope.launch { prefs.setOnboardingCompleted(true) }
-    }
-
-    fun setGuestMode(enabled: Boolean) {
-        viewModelScope.launch { prefs.setGuestMode(enabled) }
-    }
-
-    fun setDarkTheme(enabled: Boolean) {
-        viewModelScope.launch { prefs.setDarkTheme(enabled) }
-    }
-
-    fun setReducedMotion(enabled: Boolean) {
-        viewModelScope.launch { prefs.setReducedMotion(enabled) }
-    }
-
-    fun setMarketingConsent(enabled: Boolean) {
-        viewModelScope.launch { prefs.setMarketingConsent(enabled) }
-    }
-
-    fun setCountryAndLanguage(countryCode: String, languageCode: String) {
-        viewModelScope.launch { prefs.setCountryAndLanguage(countryCode, languageCode) }
-    }
-}
-
-class DiscoverViewModel(
-    private val productRepository: ProductRepository,
-    receiptAndCampaignRepository: ReceiptAndCampaignRepository,
-    isAuthenticated: Boolean
-) : ViewModel() {
-
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
-
-    private val _searchResults = MutableStateFlow<List<CatalogProduct>>(emptyList())
-    val searchResults: StateFlow<List<CatalogProduct>> = _searchResults.asStateFlow()
-
-    private val _isSearching = MutableStateFlow(false)
-    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
-
-    val cachedCatalog: StateFlow<List<CatalogProduct>> = productRepository.observeCachedCatalog()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
-
-    val activeCampaigns: StateFlow<UiState<List<Campaign>>> = if (isAuthenticated) {
-        receiptAndCampaignRepository.observeActiveCampaigns()
-            .toUiStateFlow("DiscoverVM")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
+        adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
+      }
     } else {
-        MutableStateFlow(UiState.Success(emptyList()))
+      adminRoleFlow.value = null
     }
+  }
 
-    fun updateQuery(query: String) {
-        _searchQuery.value = query
-    }
+  private val prefsState: StateFlow<AppPreferences> = container.preferencesDataStore.preferencesFlow
+    .stateIn(viewModelScope, SharingStarted.Eagerly, AppPreferences())
 
-    fun executeSearch() {
-        val query = _searchQuery.value.trim()
-        if (query.isBlank()) {
-            _searchResults.value = emptyList()
-            return
+  init {
+    container.auth.addAuthStateListener(authListener)
+    container.auth.currentUser?.let { existing ->
+      viewModelScope.launch {
+        runCatching {
+          val prefs = prefsState.value
+          container.userWalletRepository.ensureAccountInitialized(
+            userId = existing.uid,
+            displayName = existing.displayName ?: existing.email?.substringBefore("@") ?: "Shopper",
+            countryCode = prefs.countryCode,
+            languageCode = prefs.languageCode,
+          )
         }
-        viewModelScope.launch {
-            _isSearching.value = true
-            try {
-                _searchResults.value = productRepository.searchCatalog(query)
-            } finally {
-                _isSearching.value = false
-            }
-        }
+        adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
+      }
     }
-}
+  }
 
-class AuthenticatedAccountViewModel(
-    private val currentUserId: String,
-    displayName: String,
-    countryCode: String,
-    languageCode: String,
-    private val userWalletRepository: UserWalletRepository,
-    private val receiptAndCampaignRepository: ReceiptAndCampaignRepository,
-    private val adminRepository: AdminRepository
-) : ViewModel() {
+  override fun onCleared() {
+    container.auth.removeAuthStateListener(authListener)
+    super.onCleared()
+  }
 
-    val profileState: StateFlow<UiState<UserProfile?>> = userWalletRepository.observeProfile(currentUserId)
-        .toUiStateFlow("AccountVM_Profile")
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
+  private fun <T> Flow<T>.safeOr(default: T): Flow<T> = catch { emit(default) }
 
-    val walletState: StateFlow<UiState<RewardWallet>> = userWalletRepository.observeWallet(currentUserId)
-        .toUiStateFlow("AccountVM_Wallet")
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val transactionsState: StateFlow<UiState<List<RewardTransaction>>> =
-        userWalletRepository.observeTransactions(currentUserId)
-            .toUiStateFlow("AccountVM_Tx")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val cloudScansState: StateFlow<UiState<List<ScanRecord>>> =
-        userWalletRepository.observeCloudScans(currentUserId)
-            .toUiStateFlow("AccountVM_Scans")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val notificationsState: StateFlow<UiState<List<AppNotification>>> =
-        userWalletRepository.observeNotifications(currentUserId)
-            .toUiStateFlow("AccountVM_Notif")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val receiptsState: StateFlow<UiState<List<ReceiptSubmission>>> =
-        receiptAndCampaignRepository.observeUserReceipts(currentUserId)
-            .toUiStateFlow("AccountVM_Receipts")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val activeCampaignsState: StateFlow<UiState<List<Campaign>>> =
-        receiptAndCampaignRepository.observeActiveCampaigns()
-            .toUiStateFlow("AccountVM_Campaigns")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    private val _adminRole = MutableStateFlow<AdminRole?>(null)
-    val adminRole: StateFlow<AdminRole?> = _adminRole.asStateFlow()
-
-    private val _feedbackMessage = MutableStateFlow<String?>(null)
-    val feedbackMessage: StateFlow<String?> = _feedbackMessage.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            userWalletRepository.ensureUserInitialized(
-                userId = currentUserId,
-                displayName = displayName,
-                countryCode = countryCode,
-                languageCode = languageCode
-            )
-            _adminRole.value = adminRepository.resolveAdminRole()
-        }
+  private val coreFlow = authUserFlow.flatMapLatest { user ->
+    if (user == null) {
+      combine(authUserFlow, prefsState) { u, prefs ->
+        CoreSessionData(u, prefs, null, RewardWallet(), emptyList())
+      }
+    } else {
+      combine(
+        authUserFlow,
+        prefsState,
+        container.userWalletRepository.observeUserProfile(user.uid).safeOr(null),
+        container.userWalletRepository.observeWallet(user.uid).safeOr(RewardWallet(userId = user.uid)),
+        container.userWalletRepository.observeTransactions(user.uid).safeOr(emptyList()),
+      ) { u, prefs, profile, wallet, txs ->
+        CoreSessionData(u, prefs, profile, wallet, txs)
+      }
     }
+  }
 
-    fun submitReceipt(
-        storeName: String,
-        transactionDate: String,
-        currencyCode: String,
-        totalAmountText: String,
-        receiptReference: String,
-        campaignId: String?
-    ) {
-        val total = totalAmountText.toDoubleOrNull()
-        if (total == null || total <= 0.0) {
-            _feedbackMessage.value = "Enter a valid receipt total greater than zero."
-            return
-        }
-        viewModelScope.launch {
-            val res = receiptAndCampaignRepository.submitReceipt(
-                storeName = storeName,
-                transactionDate = transactionDate,
-                currencyCode = currencyCode,
-                totalAmount = total,
-                receiptReference = receiptReference,
-                campaignId = campaignId
-            )
-            res.onSuccess {
-                _feedbackMessage.value = "Receipt submitted for human verification (Pending review)."
-            }.onFailure {
-                _feedbackMessage.value = it.localizedMessage ?: "Receipt submission rejected."
-            }
-        }
+  private val secondaryFlow = authUserFlow.flatMapLatest { user ->
+    val localScansFlow = container.userWalletRepository.observeLocalScans().safeOr(emptyList())
+    val catalogFlow = container.productRepository.observeCachedCatalog().safeOr(emptyList())
+    if (user == null) {
+      combine(localScansFlow, catalogFlow) { localScans, catalog ->
+        SecondarySessionData(
+          receipts = emptyList(),
+          payoutRequests = emptyList(),
+          notifications = emptyList(),
+          campaigns = emptyList(),
+          cloudScans = emptyList(),
+          localScans = localScans,
+          cachedCatalog = catalog,
+        )
+      }
+    } else {
+      combine(
+        combine(
+          container.receiptCampaignRepository.observeUserReceipts(user.uid).safeOr(emptyList()),
+          container.userWalletRepository.observeUserPayoutRequests(user.uid).safeOr(emptyList()),
+          container.userWalletRepository.observeNotifications(user.uid).safeOr(emptyList()),
+          container.receiptCampaignRepository.observeActiveCampaigns().safeOr(emptyList()),
+        ) { receipts, payouts, notifs, campaigns ->
+          arrayOf(receipts, payouts, notifs, campaigns)
+        },
+        combine(
+          container.userWalletRepository.observeCloudScans(user.uid).safeOr(emptyList()),
+          localScansFlow,
+          catalogFlow,
+        ) { cloudScans, localScans, catalog -> Triple(cloudScans, localScans, catalog) },
+      ) { first, second ->
+        @Suppress("UNCHECKED_CAST")
+        SecondarySessionData(
+          receipts = first[0] as List<ReceiptSubmission>,
+          payoutRequests = first[1] as List<PayoutRequest>,
+          notifications = first[2] as List<AppNotification>,
+          campaigns = first[3] as List<Campaign>,
+          cloudScans = second.first,
+          localScans = second.second,
+          cachedCatalog = second.third,
+        )
+      }
     }
+  }
 
-    fun redeemVoucher(currentWallet: RewardWallet, amountPoints: Long, rewardTitle: String) {
-        viewModelScope.launch {
-            val res = userWalletRepository.redeemSandboxVoucher(
-                userId = currentUserId,
-                currentWallet = currentWallet,
-                amountPoints = amountPoints,
-                rewardTitle = rewardTitle
-            )
-            res.onSuccess {
-                _feedbackMessage.value = "Redeemed $amountPoints sandbox pts for $rewardTitle."
-            }.onFailure {
-                _feedbackMessage.value = it.localizedMessage ?: "Redemption failed."
-            }
-        }
+  private val adminFlow = adminRoleFlow.flatMapLatest { role ->
+    if (role == null) {
+      flowOf(
+        AdminSessionData(
+          role = null,
+          allUsers = emptyList(),
+          allPayoutRequests = emptyList(),
+          pendingReceipts = emptyList(),
+          allReceipts = emptyList(),
+          allCampaigns = emptyList(),
+          unverifiedCatalog = emptyList(),
+          deletionRequests = emptyList(),
+          auditLogs = emptyList(),
+        ),
+      )
+    } else {
+      combine(
+        combine(
+          container.adminRepository.observeAllUsers().safeOr(emptyList()),
+          container.adminRepository.observeAllPayoutRequests().safeOr(emptyList()),
+          container.adminRepository.observePendingReceipts().safeOr(emptyList()),
+          container.adminRepository.observeAllReceipts().safeOr(emptyList()),
+        ) { users, payouts, pendingR, allR -> arrayOf(users, payouts, pendingR, allR) },
+        combine(
+          container.adminRepository.observeAllCampaigns().safeOr(emptyList()),
+          container.adminRepository.observeUnverifiedCatalog().safeOr(emptyList()),
+          container.adminRepository.observeDeletionRequests().safeOr(emptyList()),
+          container.adminRepository.observeAuditLogs().safeOr(emptyList()),
+        ) { camps, unverified, deletions, logs -> arrayOf(camps, unverified, deletions, logs) },
+      ) { a, b ->
+        @Suppress("UNCHECKED_CAST")
+        AdminSessionData(
+          role = role,
+          allUsers = a[0] as List<UserProfile>,
+          allPayoutRequests = a[1] as List<PayoutRequest>,
+          pendingReceipts = a[2] as List<ReceiptSubmission>,
+          allReceipts = a[3] as List<ReceiptSubmission>,
+          allCampaigns = b[0] as List<Campaign>,
+          unverifiedCatalog = b[1] as List<CatalogProduct>,
+          deletionRequests = b[2] as List<DeletionRequest>,
+          auditLogs = b[3] as List<AuditLog>,
+        )
+      }
     }
+  }
 
-    fun syncPreferencesToProfile(
-        countryCode: String? = null,
-        languageCode: String? = null,
-        marketingConsent: Boolean? = null,
-        darkThemeEnabled: Boolean? = null,
-        reducedMotionEnabled: Boolean? = null
-    ) {
-        val currency = countryCode?.let { MarketCatalog.findByCountry(it).currencyCode }
-        viewModelScope.launch {
-            userWalletRepository.updateProfilePreferences(
-                userId = currentUserId,
-                countryCode = countryCode,
-                languageCode = languageCode,
-                currencyCode = currency,
-                marketingConsent = marketingConsent,
-                darkThemeEnabled = darkThemeEnabled,
-                reducedMotionEnabled = reducedMotionEnabled
-            )
-        }
+  val uiState: StateFlow<MainUiState> = combine(
+    combine(coreFlow, secondaryFlow, adminFlow) { c, s, a -> Triple(c, s, a) },
+    combine(
+      searchResultsFlow,
+      isSearchingFlow,
+      isSigningInFlow,
+      activeScanContextFlow,
+      feedbackMessageFlow,
+    ) { results, searching, signingIn, scanCtx, feedback ->
+      arrayOf<Any?>(results, searching, signingIn, scanCtx, feedback)
+    },
+  ) { session, uiFlags ->
+    val core = session.first
+    val sec = session.second
+    val admin = session.third
+    @Suppress("UNCHECKED_CAST")
+    val searchResults = uiFlags[0] as List<CatalogProduct>
+    val isSearching = uiFlags[1] as Boolean
+    val isSigningIn = uiFlags[2] as Boolean
+    val scanContext = uiFlags[3] as ScanContext?
+    val feedback = uiFlags[4] as String?
+
+    val mergedScans = (sec.cloudScans + sec.localScans)
+      .distinctBy { "${it.barcodeValue}|${it.scannedAt?.seconds ?: (it.localTimestampMs / 1000L)}" }
+      .sortedByDescending { it.scannedAt?.seconds ?: (it.localTimestampMs / 1000L) }
+
+    MainUiState(
+      firebaseUser = core.user,
+      preferences = core.prefs,
+      userProfile = core.profile,
+      wallet = core.wallet,
+      transactions = core.transactions,
+      receipts = sec.receipts,
+      payoutRequests = sec.payoutRequests,
+      notifications = sec.notifications,
+      campaigns = sec.campaigns,
+      recentScans = mergedScans,
+      cachedCatalog = sec.cachedCatalog,
+      adminRole = admin.role,
+      allUsers = admin.allUsers,
+      allPayoutRequests = admin.allPayoutRequests,
+      pendingReceipts = admin.pendingReceipts,
+      allReceipts = admin.allReceipts,
+      allCampaigns = admin.allCampaigns,
+      unverifiedCatalog = admin.unverifiedCatalog,
+      deletionRequests = admin.deletionRequests,
+      auditLogs = admin.auditLogs,
+      searchResults = searchResults,
+      isSearching = isSearching,
+      isSigningIn = isSigningIn,
+      activeScanContext = scanContext,
+      feedbackMessage = feedback,
+    )
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), MainUiState())
+
+  fun setScanContext(context: ScanContext) {
+    activeScanContextFlow.value = context
+  }
+
+  fun clearScanContext() {
+    activeScanContextFlow.value = null
+  }
+
+  fun clearFeedback() {
+    feedbackMessageFlow.value = null
+  }
+
+  fun showFeedback(message: String) {
+    feedbackMessageFlow.value = message
+  }
+
+  fun completeOnboarding(countryCode: String? = null) {
+    viewModelScope.launch {
+      if (countryCode != null) {
+        val market = MarketConfig.findByCountry(countryCode)
+        container.preferencesDataStore.setRegion(market.countryCode, market.defaultLanguage)
+      }
+      container.preferencesDataStore.setOnboardingCompleted(true)
     }
+  }
 
-    fun markNotificationRead(notificationId: String) {
-        viewModelScope.launch {
-            userWalletRepository.markNotificationRead(currentUserId, notificationId)
-        }
+  fun enterGuestMode() {
+    viewModelScope.launch {
+      container.preferencesDataStore.setOnboardingCompleted(true)
+      container.preferencesDataStore.setGuestMode(true)
     }
+  }
 
-    fun requestDeletion(reason: String) {
-        viewModelScope.launch {
-            val res = userWalletRepository.requestAccountDeletion(currentUserId, reason)
-            res.onSuccess {
-                _feedbackMessage.value = "Account deletion request logged."
-            }.onFailure {
-                _feedbackMessage.value = it.localizedMessage ?: "Could not submit deletion request."
-            }
-        }
+  fun signInWithGoogle(activityContext: Context) {
+    viewModelScope.launch {
+      isSigningInFlow.value = true
+      val result = container.credentialAuth.signInWithGoogle(activityContext)
+      isSigningInFlow.value = false
+      result.onSuccess { user ->
+        handleAuthenticatedUser(user, "Signed in as ${user.displayName ?: user.email ?: "Shopper"}")
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Google sign-in cancelled or unavailable."
+      }
     }
+  }
 
-    fun clearFeedback() {
-        _feedbackMessage.value = null
+  fun signInWithEmail(email: String, password: String) {
+    viewModelScope.launch {
+      isSigningInFlow.value = true
+      val result = container.credentialAuth.signInWithEmail(email, password)
+      isSigningInFlow.value = false
+      result.onSuccess { user ->
+        handleAuthenticatedUser(user, "Welcome back, ${user.displayName ?: user.email ?: "Shopper"}")
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Email sign-in failed."
+      }
     }
-}
+  }
 
-class GuestScansViewModel(
-    userWalletRepository: UserWalletRepository
-) : ViewModel() {
-    val localScans: StateFlow<List<ScanRecord>> = userWalletRepository.observeLocalScans()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
-}
-
-class AdminConsoleViewModel(
-    private val adminRepository: AdminRepository
-) : ViewModel() {
-    val pendingReceipts: StateFlow<UiState<List<ReceiptSubmission>>> =
-        adminRepository.observePendingReceipts()
-            .toUiStateFlow("AdminVM_Receipts")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val allCampaigns: StateFlow<UiState<List<Campaign>>> =
-        adminRepository.observeAllCampaigns()
-            .toUiStateFlow("AdminVM_Campaigns")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val unverifiedCatalog: StateFlow<UiState<List<CatalogProduct>>> =
-        adminRepository.observeUnverifiedCatalog()
-            .toUiStateFlow("AdminVM_Catalog")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    val auditLogs: StateFlow<UiState<List<AuditLog>>> =
-        adminRepository.observeAuditLogs()
-            .toUiStateFlow("AdminVM_Audit")
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
-
-    private val _statusMessage = MutableStateFlow<String?>(null)
-    val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
-
-    fun approveReceipt(receipt: ReceiptSubmission, points: Long) {
-        viewModelScope.launch {
-            adminRepository.approveReceiptAndCreditPoints(receipt, points)
-                .onSuccess { _statusMessage.value = "Receipt approved & $points pts credited." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Approval failed." }
-        }
+  fun signUpWithEmail(displayName: String, email: String, password: String) {
+    viewModelScope.launch {
+      isSigningInFlow.value = true
+      val result = container.credentialAuth.signUpWithEmail(displayName, email, password)
+      isSigningInFlow.value = false
+      result.onSuccess { user ->
+        handleAuthenticatedUser(
+          user,
+          "Account created! Check ${user.email ?: "your inbox"} to verify your email.",
+        )
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Could not create account."
+      }
     }
+  }
 
-    fun rejectReceipt(receipt: ReceiptSubmission, reason: String) {
-        viewModelScope.launch {
-            adminRepository.rejectReceipt(receipt, reason)
-                .onSuccess { _statusMessage.value = "Receipt rejected & audit logged." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Rejection failed." }
-        }
+  fun sendPasswordReset(email: String) {
+    viewModelScope.launch {
+      container.credentialAuth.sendPasswordReset(email)
+        .onSuccess { feedbackMessageFlow.value = "Password reset link sent to ${email.trim()}." }
+        .onFailure { err -> feedbackMessageFlow.value = err.message ?: "Could not send password reset email." }
     }
+  }
 
-    fun createCampaign(
-        partnerName: String,
-        title: String,
-        terms: String,
-        rewardPoints: Long,
-        countriesCsv: String,
-        categoriesCsv: String
-    ) {
-        val countries = countriesCsv.split(",").map { it.trim().uppercase() }.filter { it.isNotBlank() }
-        val categories = categoriesCsv.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        viewModelScope.launch {
-            adminRepository.createCampaign(
-                partnerName = partnerName,
-                title = title,
-                terms = terms,
-                rewardPoints = rewardPoints,
-                maxPerUser = 3L,
-                eligibleCountries = countries.ifEmpty { listOf("GLOBAL") },
-                eligibleCategories = categories,
-                status = CampaignStatus.ACTIVE
-            ).onSuccess {
-                _statusMessage.value = "Campaign '$title' published as ACTIVE."
-            }.onFailure {
-                _statusMessage.value = it.localizedMessage ?: "Campaign creation failed."
-            }
-        }
+  fun resendVerificationEmail() {
+    viewModelScope.launch {
+      container.credentialAuth.resendVerificationEmail()
+        .onSuccess { feedbackMessageFlow.value = "Verification email sent. Check your inbox." }
+        .onFailure { err -> feedbackMessageFlow.value = err.message ?: "Failed to send verification email." }
     }
+  }
 
-    fun updateCampaignStatus(campaignId: String, status: CampaignStatus) {
-        viewModelScope.launch {
-            adminRepository.updateCampaignStatus(campaignId, status)
-                .onSuccess { _statusMessage.value = "Campaign updated to ${status.name}." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Update failed." }
-        }
+  private suspend fun handleAuthenticatedUser(user: FirebaseUser, message: String) {
+    container.preferencesDataStore.setOnboardingCompleted(true)
+    container.preferencesDataStore.setGuestMode(false)
+    val prefs = prefsState.value
+    runCatching {
+      container.userWalletRepository.ensureAccountInitialized(
+        userId = user.uid,
+        displayName = user.displayName ?: user.email?.substringBefore("@") ?: "Shopper",
+        countryCode = prefs.countryCode,
+        languageCode = prefs.languageCode,
+      )
     }
+    adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
+    feedbackMessageFlow.value = message
+  }
 
-    fun verifyProduct(barcode: String) {
-        viewModelScope.launch {
-            adminRepository.promoteCatalogProduct(barcode, VerificationStatus.VERIFIED_MERCHANT)
-                .onSuccess { _statusMessage.value = "Product $barcode promoted to Verified Merchant." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Verification failed." }
-        }
+  fun signOut() {
+    viewModelScope.launch {
+      container.credentialAuth.signOut()
+      container.preferencesDataStore.setGuestMode(false)
+      feedbackMessageFlow.value = "Signed out of SCAN2MONEY."
     }
+  }
 
-    fun reverseTransaction(tx: RewardTransaction, reason: String) {
-        viewModelScope.launch {
-            adminRepository.reverseTransaction(tx, reason)
-                .onSuccess { _statusMessage.value = "Ledger reversal posted with audit reference." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Reversal failed." }
-        }
+  fun updateRegion(countryCode: String, languageCode: String) {
+    viewModelScope.launch {
+      val market = MarketConfig.findByCountry(countryCode)
+      container.preferencesDataStore.setRegion(market.countryCode, languageCode)
+      runCatching {
+        container.userWalletRepository.updatePreferences(
+          countryCode = market.countryCode,
+          languageCode = languageCode,
+          currencyCode = market.currencyCode,
+        )
+      }
+      feedbackMessageFlow.value = "Region updated to ${market.countryName} (${market.currencyCode})."
     }
+  }
 
-    fun clearStatusMessage() {
-        _statusMessage.value = null
+  fun setDarkTheme(enabled: Boolean) {
+    viewModelScope.launch {
+      container.preferencesDataStore.setDarkTheme(enabled)
+      runCatching { container.userWalletRepository.updatePreferences(darkThemeEnabled = enabled) }
     }
+  }
+
+  fun setReducedMotion(enabled: Boolean) {
+    viewModelScope.launch {
+      container.preferencesDataStore.setReducedMotion(enabled)
+      runCatching { container.userWalletRepository.updatePreferences(reducedMotionEnabled = enabled) }
+    }
+  }
+
+  fun setMarketingConsent(enabled: Boolean) {
+    viewModelScope.launch {
+      container.preferencesDataStore.setMarketingConsent(enabled)
+      runCatching { container.userWalletRepository.updatePreferences(marketingConsent = enabled) }
+      feedbackMessageFlow.value = if (enabled) "Marketing notices enabled." else "Marketing notices turned off."
+    }
+  }
+
+  fun searchCatalog(query: String) {
+    if (query.trim().isEmpty()) {
+      searchResultsFlow.value = emptyList()
+      return
+    }
+    viewModelScope.launch {
+      isSearchingFlow.value = true
+      searchResultsFlow.value = runCatching { container.productRepository.searchCatalog(query) }
+        .getOrElse { emptyList() }
+      isSearchingFlow.value = false
+    }
+  }
+
+  fun submitReceipt(
+    storeName: String,
+    transactionDate: String,
+    currencyCode: String,
+    totalAmount: Double,
+    receiptReference: String,
+    campaignId: String?,
+    onSuccess: () -> Unit,
+  ) {
+    viewModelScope.launch {
+      runCatching {
+        container.receiptCampaignRepository.submitReceipt(
+          storeName = storeName,
+          transactionDate = transactionDate,
+          currencyCode = currencyCode,
+          totalAmount = totalAmount,
+          receiptReference = receiptReference,
+          campaignId = campaignId,
+        )
+      }.onSuccess {
+        feedbackMessageFlow.value = "Receipt submitted for human review (1-3 min typical check)."
+        onSuccess()
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Could not submit receipt."
+      }
+    }
+  }
+
+  fun submitPayoutRequest(
+    amountPoints: Long,
+    rewardTitle: String,
+    payoutMethod: PayoutMethod,
+    destinationHandle: String,
+  ) {
+    viewModelScope.launch {
+      val name = uiState.value.userProfile?.displayName
+        ?: uiState.value.firebaseUser?.displayName
+        ?: "Shopper"
+      runCatching {
+        container.userWalletRepository.submitPayoutRequest(
+          currentWallet = uiState.value.wallet,
+          amountPoints = amountPoints,
+          rewardTitle = rewardTitle,
+          payoutMethod = payoutMethod,
+          destinationHandle = destinationHandle,
+          userDisplayName = name,
+        )
+      }.onSuccess {
+        feedbackMessageFlow.value = "Payout request ($amountPoints PTS) submitted for admin review."
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Could not submit payout request."
+      }
+    }
+  }
+
+  fun redeemSandboxVoucher(amountPoints: Long, rewardTitle: String) {
+    viewModelScope.launch {
+      runCatching {
+        container.userWalletRepository.redeemSandboxVoucher(
+          currentWallet = uiState.value.wallet,
+          amountPoints = amountPoints,
+          rewardTitle = rewardTitle,
+        )
+      }.onSuccess {
+        feedbackMessageFlow.value = "Redeemed $amountPoints PTS for $rewardTitle."
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Redemption failed."
+      }
+    }
+  }
+
+  fun markNotificationRead(id: String) {
+    viewModelScope.launch {
+      runCatching { container.userWalletRepository.markNotificationRead(id) }
+    }
+  }
+
+  fun requestDeletion(reason: String) {
+    viewModelScope.launch {
+      runCatching { container.userWalletRepository.requestAccountDeletion(reason) }
+        .onSuccess { feedbackMessageFlow.value = "Deletion request logged." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Could not submit deletion request." }
+    }
+  }
+
+  // --- Admin Governance Actions ---
+  fun reviewPayoutRequest(request: PayoutRequest, newStatus: PayoutStatus, adminNotes: String) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.reviewPayoutRequest(request, newStatus, adminNotes) }
+        .onSuccess { feedbackMessageFlow.value = "Payout marked ${newStatus.name}." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Payout update failed." }
+    }
+  }
+
+  fun updateUserAccountStatus(targetUserId: String, newStatus: String, reason: String) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.updateUserAccountStatus(targetUserId, newStatus, reason) }
+        .onSuccess { feedbackMessageFlow.value = "User account updated to $newStatus." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Could not update user status." }
+    }
+  }
+
+  fun adminCreditBonusPoints(targetUserId: String, bonusPoints: Long, reason: String) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.adminCreditBonusPoints(targetUserId, bonusPoints, reason) }
+        .onSuccess { feedbackMessageFlow.value = "+$bonusPoints PTS credited to user wallet." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Could not credit bonus points." }
+    }
+  }
+
+  fun approveReceipt(receipt: ReceiptSubmission, rewardPoints: Long) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.approveReceiptAndCredit(receipt, rewardPoints) }
+        .onSuccess { feedbackMessageFlow.value = "Receipt approved & +$rewardPoints PTS credited." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Approval failed." }
+    }
+  }
+
+  fun rejectReceipt(receipt: ReceiptSubmission, reason: String) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.rejectReceipt(receipt, reason) }
+        .onSuccess { feedbackMessageFlow.value = "Receipt rejected with audit log." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Rejection failed." }
+    }
+  }
+
+  fun createCampaign(
+    partnerName: String,
+    title: String,
+    terms: String,
+    rewardPoints: Long,
+    countries: List<String>,
+  ) {
+    viewModelScope.launch {
+      runCatching {
+        container.adminRepository.createCampaign(partnerName, title, terms, rewardPoints, countries)
+      }.onSuccess {
+        feedbackMessageFlow.value = "Campaign '$title' published."
+      }.onFailure {
+        feedbackMessageFlow.value = it.message ?: "Campaign creation failed."
+      }
+    }
+  }
+
+  fun updateCampaignStatus(campaign: Campaign, newStatus: CampaignStatus) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.updateCampaignStatus(campaign, newStatus) }
+        .onSuccess { feedbackMessageFlow.value = "Campaign updated to ${newStatus.name}." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Campaign update failed." }
+    }
+  }
+
+  fun verifyCatalogProduct(product: CatalogProduct) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.verifyProductRecord(product) }
+        .onSuccess { feedbackMessageFlow.value = "${product.name} marked Verified Merchant." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Verification failed." }
+    }
+  }
+
+  fun completeDeletionRequest(request: DeletionRequest) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.completeDeletionRequest(request) }
+        .onSuccess { feedbackMessageFlow.value = "Deletion request marked COMPLETED." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Update failed." }
+    }
+  }
+
+  fun reverseTransaction(tx: RewardTransaction, reason: String) {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.reverseTransaction(tx, reason) }
+        .onSuccess { feedbackMessageFlow.value = "Transaction reversed with audit entry." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Reversal failed." }
+    }
+  }
+
+  companion object {
+    fun factory(container: AppContainer): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+      @Suppress("UNCHECKED_CAST")
+      override fun <T : ViewModel> create(modelClass: Class<T>): T = MainAppViewModel(container) as T
+    }
+  }
 }

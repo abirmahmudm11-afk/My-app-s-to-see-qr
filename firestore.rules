@@ -34,7 +34,10 @@ service cloud.firestore {
           'email_verified' in request.auth.token &&
           'email' in request.auth.token &&
           request.auth.token.email_verified == true &&
-          request.auth.token.email == 'm28044963@gmail.com'
+          (
+            request.auth.token.email == 'altabmahmud172@gmail.com' ||
+            request.auth.token.email == 'm28044963@gmail.com'
+          )
         )
       );
     }
@@ -191,6 +194,20 @@ service cloud.firestore {
              data.reason is string && data.reason.size() <= 300 &&
              data.status in ['REQUESTED', 'COMPLETED'] &&
              data.requestedAt is timestamp && data.requestedAt <= request.time;
+    }
+
+    function isValidPayoutRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userDisplayName is string && data.userDisplayName.size() >= 1 && data.userDisplayName.size() <= 80 &&
+             data.rewardTitle is string && data.rewardTitle.size() >= 1 && data.rewardTitle.size() <= 120 &&
+             data.pointsAmount is int && data.pointsAmount >= 100 && data.pointsAmount <= 1000000 &&
+             data.payoutMethod in ['GIFT_VOUCHER', 'PAYPAL_SANDBOX', 'BANK_SANDBOX'] &&
+             data.destinationHandle is string && data.destinationHandle.size() >= 2 && data.destinationHandle.size() <= 140 &&
+             data.status in ['PENDING', 'APPROVED', 'PAID', 'REJECTED'] &&
+             (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 300)) &&
+             (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 128)) &&
+             data.requestedAt is timestamp && data.requestedAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
     // --- Collection Rules ---
@@ -497,6 +514,35 @@ service cloud.firestore {
                        incoming().userId == existing().userId &&
                        incoming().requestedAt == existing().requestedAt &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if false;
+    }
+
+    // 8. Payout & Redemption Requests
+    match /payout_requests/{requestId} {
+      allow get: if isValidId(requestId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(requestId) &&
+                       isSignedIn() &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       !('reviewedBy' in incoming()) &&
+                       !('adminNotes' in incoming()) &&
+                       incoming().keys().hasAll(['userId', 'userDisplayName', 'rewardTitle', 'pointsAmount', 'payoutMethod', 'destinationHandle', 'status', 'requestedAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'userDisplayName', 'rewardTitle', 'pointsAmount', 'payoutMethod', 'destinationHandle', 'status', 'requestedAt', 'updatedAt']) &&
+                       isValidPayoutRequest(incoming()) &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.availablePoints ==
+                         get(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.availablePoints - incoming().pointsAmount &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.redeemedPoints ==
+                         get(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.redeemedPoints + incoming().pointsAmount;
+      allow update: if isValidId(requestId) &&
+                       isAdmin() &&
+                       isValidPayoutRequest(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().requestedAt == existing().requestedAt &&
+                       incoming().pointsAmount == existing().pointsAmount &&
+                       existing().status in ['PENDING', 'APPROVED'] &&
+                       incoming().status in ['APPROVED', 'PAID', 'REJECTED'] &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNotes', 'reviewedBy', 'updatedAt']);
       allow delete: if false;
     }
   }

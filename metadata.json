@@ -1,6 +1,6 @@
 {
   "name": "SCAN2MONEY",
   "description": "Barcode-powered product discovery, offer comparison, receipt verification, and rewards wallet platform.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

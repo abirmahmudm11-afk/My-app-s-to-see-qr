@@ -3,422 +3,356 @@ package com.example.data.repository
 import com.example.data.local.LocalScanDao
 import com.example.data.local.LocalScanEntity
 import com.example.data.model.AppNotification
-import com.example.data.model.NotificationCategory
+import com.example.data.model.PayoutMethod
+import com.example.data.model.PayoutRequest
+import com.example.data.model.PayoutStatus
 import com.example.data.model.RewardTransaction
 import com.example.data.model.RewardWallet
 import com.example.data.model.ScanRecord
 import com.example.data.model.TransactionStatus
 import com.example.data.model.TransactionType
 import com.example.data.model.UserProfile
-import com.example.domain.MarketCatalog
-import com.google.firebase.Firebase
-import com.google.firebase.Timestamp
-import com.google.firebase.auth.auth
-import com.google.firebase.firestore.DocumentSnapshot
+import com.example.domain.MarketConfig
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreException
-import com.google.firebase.firestore.snapshots
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
 class UserWalletRepository(
-    private val db: FirebaseFirestore,
-    private val localScanDao: LocalScanDao
+  private val db: FirebaseFirestore,
+  private val auth: FirebaseAuth,
+  private val localScanDao: LocalScanDao,
 ) {
-    private val auth = Firebase.auth
+  fun observeLocalScans(): Flow<List<ScanRecord>> =
+    localScanDao.observeRecent().map { list -> list.map { it.toScanRecord() } }
 
-    private fun requireUserId(): String {
-        return auth.currentUser?.uid
-            ?: throw IllegalStateException("User must be signed in with Google before accessing account data.")
+  suspend fun ensureAccountInitialized(
+    userId: String,
+    displayName: String,
+    countryCode: String,
+    languageCode: String,
+  ) {
+    val uid = auth.currentUser?.uid ?: return
+    if (uid != userId) return
+    val market = MarketConfig.findByCountry(countryCode)
+    val userRef = db.collection("users").document(uid)
+    val walletRef = userRef.collection("wallet").document("summary")
+    try {
+      if (!userRef.get().await().exists()) {
+        userRef.set(
+          hashMapOf(
+            "userId" to uid,
+            "displayName" to displayName.trim().ifEmpty { "Shopper" }.take(80),
+            "preferredLanguage" to languageCode.lowercase().ifEmpty { market.defaultLanguage }.take(10),
+            "countryCode" to market.countryCode,
+            "currencyCode" to market.currencyCode,
+            "accountStatus" to "ACTIVE",
+            "marketingConsent" to false,
+            "darkThemeEnabled" to false,
+            "reducedMotionEnabled" to false,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        ).await()
+      }
+      if (!walletRef.get().await().exists()) {
+        walletRef.set(
+          hashMapOf(
+            "userId" to uid,
+            "unitCode" to "PTS",
+            "availablePoints" to 0L,
+            "pendingPoints" to 0L,
+            "redeemedPoints" to 0L,
+            "reversedPoints" to 0L,
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        ).await()
+      }
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.WRITE, "users/$uid", auth)
     }
+  }
 
-    suspend fun ensureUserInitialized(
-        userId: String,
-        displayName: String,
-        countryCode: String,
-        languageCode: String
-    ): Result<Unit> {
-        val userPath = "users/$userId"
-        return try {
-            val uid = requireUserId()
-            check(uid == userId) { "Signed-in user mismatch." }
-            val userRef = db.collection("users").document(uid)
-            val walletRef = userRef.collection("wallet").document("summary")
-            val market = MarketCatalog.findByCountry(countryCode)
-
-            val userSnap = userRef.get().await()
-            if (!userSnap.exists()) {
-                val profile = UserProfile(
-                    userId = uid,
-                    displayName = displayName.ifBlank { "Shopper" },
-                    preferredLanguage = languageCode.ifBlank { market.defaultLanguage },
-                    countryCode = market.countryCode,
-                    currencyCode = market.currencyCode,
-                    accountStatus = "ACTIVE",
-                    marketingConsent = false,
-                    darkThemeEnabled = false,
-                    reducedMotionEnabled = false
-                )
-                userRef.set(profile.toCreateMap()).await()
-            }
-
-            val walletSnap = walletRef.get().await()
-            if (!walletSnap.exists()) {
-                val wallet = RewardWallet(userId = uid)
-                walletRef.set(wallet.toCreateMap()).await()
-            }
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, userPath)
-            Result.failure(e)
+  fun observeUserProfile(userId: String): Flow<UserProfile?> = callbackFlow {
+    val reg = db.collection("users").document(userId).addSnapshotListener { snap, error ->
+      if (error != null) {
+        if (auth.currentUser?.uid == userId) {
+          close(error)
         }
+        return@addSnapshotListener
+      }
+      trySend(if (snap != null && snap.exists()) snap.toObject(UserProfile::class.java)?.copy(id = snap.id) else null)
     }
+    awaitClose { reg.remove() }
+  }
 
-    fun observeProfile(userId: String): Flow<UserProfile?> = flow {
-        val uid = requireUserId()
-        check(uid == userId)
-        val path = "users/$uid"
-        emitAll(
-            db.collection("users").document(uid)
-                .snapshots()
-                .map { snap ->
-                    if (snap.exists()) {
-                        snap.toObject(
-                            UserProfile::class.java,
-                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                        )
-                    } else null
-                }
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    if (auth.currentUser?.uid == uid) {
-                        handleFirestoreError(firestoreError ?: error, OperationType.GET, path)
-                    }
-                    throw error
-                }
-        )
-    }
-
-    fun observeWallet(userId: String): Flow<RewardWallet> = flow {
-        val uid = requireUserId()
-        check(uid == userId)
-        val path = "users/$uid/wallet/summary"
-        emitAll(
-            db.collection("users").document(uid).collection("wallet").document("summary")
-                .snapshots()
-                .map { snap ->
-                    snap.toObject(
-                        RewardWallet::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ) ?: RewardWallet(userId = uid)
-                }
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    if (auth.currentUser?.uid == uid) {
-                        handleFirestoreError(firestoreError ?: error, OperationType.GET, path)
-                    }
-                    throw error
-                }
-        )
-    }
-
-    fun observeTransactions(userId: String): Flow<List<RewardTransaction>> = flow {
-        val uid = requireUserId()
-        check(uid == userId)
-        val path = "users/$uid/transactions"
-        emitAll(
-            db.collection("users").document(uid).collection("transactions")
-                .snapshots()
-                .map { snap ->
-                    snap.toObjects(
-                        RewardTransaction::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
-                }
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    if (auth.currentUser?.uid == uid) {
-                        handleFirestoreError(firestoreError ?: error, OperationType.LIST, path)
-                    }
-                    throw error
-                }
-        )
-    }
-
-    fun observeLocalScans(): Flow<List<ScanRecord>> =
-        localScanDao.observeScans().map { list ->
-            list.map {
-                ScanRecord(
-                    id = it.id.toString(),
-                    userId = "local",
-                    barcodeValue = it.barcodeValue,
-                    barcodeFormat = it.barcodeFormat,
-                    productName = it.productName,
-                    brand = it.brand,
-                    sourceProvider = it.sourceProvider,
-                    verificationStatus = it.verificationStatus,
-                    scanResult = it.scanResult,
-                    scannedAt = Timestamp(it.scannedAtMillis / 1000L, 0)
-                )
-            }
+  fun observeWallet(userId: String): Flow<RewardWallet> = callbackFlow {
+    val reg = db.collection("users").document(userId).collection("wallet").document("summary")
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          if (auth.currentUser?.uid == userId) close(error)
+          return@addSnapshotListener
         }
-
-    fun observeCloudScans(userId: String): Flow<List<ScanRecord>> = flow {
-        val uid = requireUserId()
-        check(uid == userId)
-        val path = "users/$uid/scans"
-        emitAll(
-            db.collection("users").document(uid).collection("scans")
-                .snapshots()
-                .map { snap ->
-                    snap.toObjects(
-                        ScanRecord::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.scannedAt ?: Timestamp(0, 0) }
-                }
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    if (auth.currentUser?.uid == uid) {
-                        handleFirestoreError(firestoreError ?: error, OperationType.LIST, path)
-                    }
-                    throw error
-                }
-        )
-    }
-
-    fun observeNotifications(userId: String): Flow<List<AppNotification>> = flow {
-        val uid = requireUserId()
-        check(uid == userId)
-        val path = "users/$uid/notifications"
-        emitAll(
-            db.collection("users").document(uid).collection("notifications")
-                .snapshots()
-                .map { snap ->
-                    snap.toObjects(
-                        AppNotification::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
-                }
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    if (auth.currentUser?.uid == uid) {
-                        handleFirestoreError(firestoreError ?: error, OperationType.LIST, path)
-                    }
-                    throw error
-                }
-        )
-    }
-
-    suspend fun recordScan(
-        barcodeValue: String,
-        barcodeFormat: String,
-        productName: String,
-        brand: String,
-        sourceProvider: String,
-        verificationStatus: String,
-        scanResult: String
-    ): Result<Unit> {
-        return try {
-            localScanDao.insert(
-                LocalScanEntity(
-                    barcodeValue = barcodeValue,
-                    barcodeFormat = barcodeFormat,
-                    productName = productName,
-                    brand = brand,
-                    sourceProvider = sourceProvider,
-                    verificationStatus = verificationStatus,
-                    scanResult = scanResult,
-                    scannedAtMillis = System.currentTimeMillis()
-                )
-            )
-            val uid = auth.currentUser?.uid
-            if (uid != null) {
-                val docRef = db.collection("users").document(uid).collection("scans").document()
-                val record = ScanRecord(
-                    userId = uid,
-                    barcodeValue = barcodeValue,
-                    barcodeFormat = barcodeFormat,
-                    productName = productName,
-                    brand = brand,
-                    sourceProvider = sourceProvider,
-                    verificationStatus = verificationStatus,
-                    scanResult = scanResult
-                )
-                docRef.set(record.toCreateMap()).await()
-            }
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, "users/${auth.currentUser?.uid}/scans")
-            Result.failure(e)
+        val wallet = if (snap != null && snap.exists()) {
+          snap.toObject(RewardWallet::class.java)?.copy(id = snap.id) ?: RewardWallet(userId = userId)
+        } else {
+          RewardWallet(userId = userId)
         }
-    }
+        trySend(wallet)
+      }
+    awaitClose { reg.remove() }
+  }
 
-    suspend fun updateProfilePreferences(
-        userId: String,
-        countryCode: String? = null,
-        languageCode: String? = null,
-        currencyCode: String? = null,
-        marketingConsent: Boolean? = null,
-        darkThemeEnabled: Boolean? = null,
-        reducedMotionEnabled: Boolean? = null
-    ): Result<Unit> {
-        val path = "users/$userId"
-        return try {
-            val uid = requireUserId()
-            check(uid == userId)
-            val updates = mutableMapOf<String, Any>(
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-            countryCode?.let { updates["countryCode"] = it.uppercase().take(2) }
-            languageCode?.let { updates["preferredLanguage"] = it.lowercase().take(10) }
-            currencyCode?.let { updates["currencyCode"] = it.uppercase().take(3) }
-            marketingConsent?.let { updates["marketingConsent"] = it }
-            darkThemeEnabled?.let { updates["darkThemeEnabled"] = it }
-            reducedMotionEnabled?.let { updates["reducedMotionEnabled"] = it }
-            db.collection("users").document(uid).update(updates).await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, path)
-            Result.failure(e)
+  fun observeTransactions(userId: String): Flow<List<RewardTransaction>> = callbackFlow {
+    val reg = db.collection("users").document(userId).collection("transactions")
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          if (auth.currentUser?.uid == userId) close(error)
+          return@addSnapshotListener
         }
-    }
+        val list = snap?.documents?.mapNotNull { doc ->
+          doc.toObject(RewardTransaction::class.java)?.copy(id = doc.id)
+        }?.sortedByDescending { it.createdAt?.seconds ?: 0L } ?: emptyList()
+        trySend(list)
+      }
+    awaitClose { reg.remove() }
+  }
 
-    suspend fun redeemSandboxVoucher(
-        userId: String,
-        currentWallet: RewardWallet,
-        amountPoints: Long,
-        rewardTitle: String
-    ): Result<Unit> {
-        val path = "users/$userId/transactions"
-        return try {
-            val uid = requireUserId()
-            check(uid == userId)
-            require(amountPoints > 0L) { "Redemption amount must be positive." }
-            require(currentWallet.availablePoints >= amountPoints) {
-                "Insufficient available points (${currentWallet.availablePoints} pts)."
-            }
-
-            val walletRef = db.collection("users").document(uid).collection("wallet").document("summary")
-            val txRef = db.collection("users").document(uid).collection("transactions").document()
-            val tx = RewardTransaction(
-                userId = uid,
-                transactionType = TransactionType.REDEMPTION.name,
-                amount = amountPoints,
-                unitCode = "PTS",
-                sourceActivity = "Sandbox Voucher: $rewardTitle",
-                status = TransactionStatus.REDEEMED.name,
-                idempotencyKey = "redeem_${uid}_${UUID.randomUUID()}",
-                auditReference = "SANDBOX-VOUCHER-${txRef.id.take(8).uppercase()}",
-                notes = "Non-cash sandbox catalog reward redemption"
-            )
-
-            val batch = db.batch()
-            batch.update(
-                walletRef,
-                mapOf(
-                    "availablePoints" to (currentWallet.availablePoints - amountPoints),
-                    "redeemedPoints" to (currentWallet.redeemedPoints + amountPoints),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            )
-            batch.set(txRef, tx.toCreateMap())
-            batch.commit().await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, path)
-            Result.failure(e)
+  fun observeCloudScans(userId: String): Flow<List<ScanRecord>> = callbackFlow {
+    val reg = db.collection("users").document(userId).collection("scans")
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          if (auth.currentUser?.uid == userId) close(error)
+          return@addSnapshotListener
         }
+        val list = snap?.documents?.mapNotNull { doc ->
+          doc.toObject(ScanRecord::class.java)?.copy(id = doc.id)
+        }?.sortedByDescending { it.scannedAt?.seconds ?: 0L } ?: emptyList()
+        trySend(list)
+      }
+    awaitClose { reg.remove() }
+  }
+
+  fun observeNotifications(userId: String): Flow<List<AppNotification>> = callbackFlow {
+    val reg = db.collection("users").document(userId).collection("notifications")
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          if (auth.currentUser?.uid == userId) close(error)
+          return@addSnapshotListener
+        }
+        val list = snap?.documents?.mapNotNull { doc ->
+          doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+        }?.sortedByDescending { it.createdAt?.seconds ?: 0L } ?: emptyList()
+        trySend(list)
+      }
+    awaitClose { reg.remove() }
+  }
+
+  suspend fun recordScan(
+    barcodeValue: String,
+    barcodeFormat: String,
+    productName: String,
+    brand: String,
+    sourceProvider: String,
+    verificationStatus: String,
+    scanResult: String,
+  ) {
+    val uid = auth.currentUser?.uid
+    localScanDao.insert(
+      LocalScanEntity(
+        userId = uid ?: "local",
+        barcodeValue = barcodeValue.take(128),
+        barcodeFormat = barcodeFormat.take(32),
+        productName = productName.take(160),
+        brand = brand.take(100),
+        sourceProvider = sourceProvider.ifEmpty { "None" }.take(80),
+        verificationStatus = verificationStatus,
+        scanResult = scanResult,
+        scannedAtMs = System.currentTimeMillis(),
+      ),
+    )
+
+    if (uid != null) {
+      val path = "users/$uid/scans"
+      try {
+        db.collection("users").document(uid).collection("scans").document().set(
+          hashMapOf(
+            "userId" to uid,
+            "barcodeValue" to barcodeValue.take(128),
+            "barcodeFormat" to barcodeFormat.take(32),
+            "productName" to productName.take(160),
+            "brand" to brand.take(100),
+            "sourceProvider" to sourceProvider.ifEmpty { "None" }.take(80),
+            "verificationStatus" to verificationStatus,
+            "scanResult" to scanResult,
+            "scannedAt" to FieldValue.serverTimestamp(),
+          ),
+        ).await()
+      } catch (e: Exception) {
+        FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
+      }
+    }
+  }
+
+  suspend fun updatePreferences(
+    countryCode: String? = null,
+    languageCode: String? = null,
+    currencyCode: String? = null,
+    marketingConsent: Boolean? = null,
+    darkThemeEnabled: Boolean? = null,
+    reducedMotionEnabled: Boolean? = null,
+  ) {
+    val uid = auth.currentUser?.uid ?: return
+    val updates = hashMapOf<String, Any>("updatedAt" to FieldValue.serverTimestamp())
+    if (countryCode != null) updates["countryCode"] = countryCode.uppercase().take(2)
+    if (languageCode != null) updates["preferredLanguage"] = languageCode.lowercase().take(10)
+    if (currencyCode != null) updates["currencyCode"] = currencyCode.uppercase().take(3)
+    if (marketingConsent != null) updates["marketingConsent"] = marketingConsent
+    if (darkThemeEnabled != null) updates["darkThemeEnabled"] = darkThemeEnabled
+    if (reducedMotionEnabled != null) updates["reducedMotionEnabled"] = reducedMotionEnabled
+
+    try {
+      db.collection("users").document(uid).update(updates).await()
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.UPDATE, "users/$uid", auth)
+    }
+  }
+
+  fun observeUserPayoutRequests(userId: String): Flow<List<PayoutRequest>> = callbackFlow {
+    val reg = db.collection("payout_requests")
+      .whereEqualTo("userId", userId)
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          if (auth.currentUser?.uid == userId) close(error)
+          return@addSnapshotListener
+        }
+        val list = snap?.documents?.mapNotNull { doc ->
+          doc.toObject(PayoutRequest::class.java)?.copy(id = doc.id)
+        }?.sortedByDescending { it.requestedAt?.seconds ?: 0L } ?: emptyList()
+        trySend(list)
+      }
+    awaitClose { reg.remove() }
+  }
+
+  suspend fun submitPayoutRequest(
+    currentWallet: RewardWallet,
+    amountPoints: Long,
+    rewardTitle: String,
+    payoutMethod: PayoutMethod,
+    destinationHandle: String,
+    userDisplayName: String,
+  ) {
+    val uid = auth.currentUser?.uid ?: throw IllegalStateException("Sign in first to request a payout.")
+    val cleanTitle = rewardTitle.trim().ifEmpty { payoutMethod.label }.take(120)
+    val cleanHandle = destinationHandle.trim().take(140)
+    val cleanName = userDisplayName.trim().ifEmpty { "Shopper" }.take(80)
+    require(amountPoints >= 100L) { "Minimum payout threshold is 100 PTS." }
+    require(cleanHandle.length >= 2) { "Enter a valid destination email, tag, or voucher handle." }
+    require(currentWallet.availablePoints >= amountPoints) {
+      "Insufficient available points (${currentWallet.availablePoints} PTS)."
     }
 
-    suspend fun markNotificationRead(userId: String, notificationId: String): Result<Unit> {
-        val path = "users/$userId/notifications/$notificationId"
-        return try {
-            val uid = requireUserId()
-            check(uid == userId)
-            db.collection("users").document(uid).collection("notifications")
-                .document(notificationId)
-                .update("read", true)
-                .await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, path)
-            Result.failure(e)
-        }
+    val path = "payout_requests"
+    try {
+      val userRef = db.collection("users").document(uid)
+      val walletRef = userRef.collection("wallet").document("summary")
+      val txRef = userRef.collection("transactions").document()
+      val payoutRef = db.collection("payout_requests").document()
+      val batch = db.batch()
+      batch.update(
+        walletRef,
+        mapOf(
+          "availablePoints" to (currentWallet.availablePoints - amountPoints),
+          "redeemedPoints" to (currentWallet.redeemedPoints + amountPoints),
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+      )
+      batch.set(
+        txRef,
+        hashMapOf(
+          "userId" to uid,
+          "transactionType" to TransactionType.REDEMPTION.name,
+          "amount" to amountPoints,
+          "unitCode" to "PTS",
+          "sourceActivity" to "${payoutMethod.label}: $cleanTitle".take(120),
+          "status" to TransactionStatus.REDEEMED.name,
+          "idempotencyKey" to "pay_${UUID.randomUUID().toString().take(18)}",
+          "auditReference" to "PAY-${payoutRef.id.take(8).uppercase()}",
+          "notes" to "Destination: $cleanHandle".take(300),
+          "createdAt" to FieldValue.serverTimestamp(),
+        ),
+      )
+      batch.set(
+        payoutRef,
+        hashMapOf(
+          "userId" to uid,
+          "userDisplayName" to cleanName,
+          "rewardTitle" to cleanTitle,
+          "pointsAmount" to amountPoints,
+          "payoutMethod" to payoutMethod.name,
+          "destinationHandle" to cleanHandle,
+          "status" to PayoutStatus.PENDING.name,
+          "requestedAt" to FieldValue.serverTimestamp(),
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+      )
+      batch.commit().await()
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.WRITE, path, auth)
     }
+  }
 
-    suspend fun requestAccountDeletion(userId: String, reason: String): Result<Unit> {
-        val path = "deletion_requests"
-        return try {
-            val uid = requireUserId()
-            check(uid == userId)
-            val batch = db.batch()
-            val reqRef = db.collection("deletion_requests").document()
-            batch.set(
-                reqRef,
-                mapOf(
-                    "userId" to uid,
-                    "reason" to reason.trim().take(300),
-                    "status" to "REQUESTED",
-                    "requestedAt" to FieldValue.serverTimestamp()
-                )
-            )
-            val userRef = db.collection("users").document(uid)
-            batch.update(
-                userRef,
-                mapOf(
-                    "accountStatus" to "DELETION_REQUESTED",
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            )
-            val notifRef = userRef.collection("notifications").document()
-            val notif = AppNotification(
-                userId = uid,
-                category = NotificationCategory.ACCOUNT.name,
-                title = "Account deletion request received",
-                body = "Your account deletion request has been logged for compliance processing.",
-                read = false,
-                referenceId = reqRef.id
-            )
-            batch.set(notifRef, notif.toCreateMap())
-            batch.commit().await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, path)
-            Result.failure(e)
-        }
+  suspend fun redeemSandboxVoucher(
+    currentWallet: RewardWallet,
+    amountPoints: Long,
+    rewardTitle: String,
+  ) {
+    submitPayoutRequest(
+      currentWallet = currentWallet,
+      amountPoints = amountPoints,
+      rewardTitle = rewardTitle,
+      payoutMethod = PayoutMethod.GIFT_VOUCHER,
+      destinationHandle = auth.currentUser?.email ?: "In-App Sandbox Voucher",
+      userDisplayName = auth.currentUser?.displayName ?: "Shopper",
+    )
+  }
+
+  suspend fun markNotificationRead(notificationId: String) {
+    val uid = auth.currentUser?.uid ?: return
+    val path = "users/$uid/notifications/$notificationId"
+    try {
+      db.collection("users").document(uid).collection("notifications").document(notificationId)
+        .update("read", true).await()
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.UPDATE, path, auth)
     }
+  }
+
+  suspend fun requestAccountDeletion(reason: String) {
+    val uid = auth.currentUser?.uid ?: throw IllegalStateException("Sign in with Google first.")
+    val path = "deletion_requests"
+    try {
+      db.collection("deletion_requests").document().set(
+        hashMapOf(
+          "userId" to uid,
+          "reason" to reason.trim().ifEmpty { "User requested deletion" }.take(300),
+          "status" to "REQUESTED",
+          "requestedAt" to FieldValue.serverTimestamp(),
+        ),
+      ).await()
+      db.collection("users").document(uid).update(
+        mapOf(
+          "accountStatus" to "DELETION_REQUESTED",
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+      ).await()
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
+    }
+  }
 }

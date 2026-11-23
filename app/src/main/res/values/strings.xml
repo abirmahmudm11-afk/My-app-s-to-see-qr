@@ -1,19 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SCAN2MONEY</string>
-    <string name="nav_home">Home</string>
-    <string name="nav_scan">Scan</string>
-    <string name="nav_rewards">Rewards</string>
-    <string name="nav_discover">Discover</string>
-    <string name="nav_profile">Profile</string>
-    <string name="sandbox_notice_title">Sandbox Rewards Mode</string>
-    <string name="sandbox_notice_body">Cashback payouts are disabled in this release. Earn and track verified sandbox points with full ledger transparency.</string>
-    <string name="guest_mode_notice">Guest browsing active. Sign in with Google to earn rewards, submit receipts, or sync history.</string>
-    <string name="sign_in_google">Sign in with Google</string>
-    <string name="continue_as_guest">Browse as Guest</string>
-    <string name="camera_permission_title">Camera Access Required</string>
-    <string name="camera_permission_rationale">SCAN2MONEY uses the camera solely on-device via ML Kit to read product barcodes. No video is recorded or uploaded.</string>
-    <string name="grant_camera_permission">Enable Camera</string>
-    <string name="scan_from_photo">Scan Image</string>
-    <string name="manual_barcode_entry">Manual Barcode</string>
-    <string name="search_products_fallback">Search Catalog</string>
+    <string name="default_web_client_id" translatable="false">300226852296-kqatnmsvj0qm0nj6nbafimjm0misdosk.apps.googleusercontent.com</string>
 </resources>

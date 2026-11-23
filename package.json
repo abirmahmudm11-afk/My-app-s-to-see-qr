@@ -1,0 +1,12 @@
+{
+  "name": "scan2money-android-artifacts",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "build": "gradle assembleDebug bundleDebug --console=plain",
+    "lint": "gradle lintDebug --console=plain"
+  }
+}

@@ -1,201 +1,107 @@
 package com.example.auth
 
-import android.app.Activity
 import android.content.Context
-import android.util.Log
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
-import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
-import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
-import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.auth
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.launch
+import com.google.firebase.auth.UserProfileChangeRequest
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
 
-fun attemptAutoSignIn(
-    context: Context,
-    credentialManager: CredentialManager,
-    onAuthSuccess: () -> Unit,
-    onUnauthenticated: () -> Unit,
-    scope: CoroutineScope
-) {
-    if (Firebase.auth.currentUser != null) {
-        onAuthSuccess()
-        return
-    }
-    val clientId = try {
-        context.getString(R.string.default_web_client_id)
-    } catch (_: Exception) {
-        onUnauthenticated()
-        return
-    }
-    val googleIdOption = GetGoogleIdOption.Builder()
-        .setFilterByAuthorizedAccounts(true)
-        .setServerClientId(clientId)
-        .setAutoSelectEnabled(true)
+class CredentialManagerAuth(private val auth: FirebaseAuth) {
+  suspend fun signInWithGoogle(activityContext: Context): Result<FirebaseUser> {
+    return try {
+      val credentialManager = CredentialManager.create(activityContext)
+      val webClientId = activityContext.getString(R.string.default_web_client_id)
+      val googleIdOption = GetGoogleIdOption.Builder()
+        .setFilterByAuthorizedAccounts(false)
+        .setServerClientId(webClientId)
+        .setAutoSelectEnabled(false)
         .build()
-    val request = GetCredentialRequest.Builder()
+
+      val request = GetCredentialRequest.Builder()
         .addCredentialOption(googleIdOption)
         .build()
 
-    scope.launch {
-        try {
-            val cred = credentialManager.getCredential(context, request).credential
-            if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                val token = GoogleIdTokenCredential.createFrom(cred.data).idToken
-                Firebase.auth.signInWithCredential(GoogleAuthProvider.getCredential(token, null)).await()
-                onAuthSuccess()
-            } else {
-                onUnauthenticated()
-            }
-        } catch (_: Exception) {
-            onUnauthenticated()
-        }
+      val result = credentialManager.getCredential(activityContext, request)
+      val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
+      val firebaseCred = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
+      val authResult = auth.signInWithCredential(firebaseCred).await()
+      val user = authResult.user ?: return Result.failure(IllegalStateException("Google sign-in returned no user."))
+      Result.success(user)
+    } catch (e: Exception) {
+      Result.failure(e)
     }
-}
+  }
 
-@Composable
-fun GoogleSignInButton(
-    onAuthSuccess: () -> Unit,
-    onAuthError: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    label: String = "Sign in with Google"
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
-    var isLoading by remember { mutableStateOf(false) }
-
-    Button(
-        onClick = {
-            isLoading = true
-            onGoogleSignInClicked(
-                context = context,
-                credentialManager = credentialManager,
-                onAuthSuccess = {
-                    isLoading = false
-                    onAuthSuccess()
-                },
-                onAuthError = { msg ->
-                    isLoading = false
-                    onAuthError(msg)
-                },
-                scope = scope,
-                onAuthCancelled = { isLoading = false }
-            )
-        },
-        enabled = !isLoading,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .testTag("google_sign_in_button")
-    ) {
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
-                color = MaterialTheme.colorScheme.onPrimary,
-                strokeWidth = 2.dp
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.AccountCircle,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(text = label, style = MaterialTheme.typography.labelLarge)
-        }
+  suspend fun signInWithEmail(email: String, password: String): Result<FirebaseUser> {
+    val cleanEmail = email.trim()
+    if (cleanEmail.isEmpty() || !cleanEmail.contains("@")) {
+      return Result.failure(IllegalArgumentException("Enter a valid email address."))
     }
-}
-
-fun onGoogleSignInClicked(
-    context: Context,
-    credentialManager: CredentialManager,
-    onAuthSuccess: () -> Unit,
-    onAuthError: (String) -> Unit,
-    scope: CoroutineScope,
-    onAuthCancelled: () -> Unit = {}
-) {
-    val clientId = try {
-        context.getString(R.string.default_web_client_id)
-    } catch (_: Exception) {
-        onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
-        return
+    if (password.length < 6) {
+      return Result.failure(IllegalArgumentException("Password must be at least 6 characters."))
     }
-    val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
-    val request = GetCredentialRequest.Builder()
-        .addCredentialOption(signInOption)
+    return try {
+      val result = auth.signInWithEmailAndPassword(cleanEmail, password).await()
+      val user = result.user ?: return Result.failure(IllegalStateException("Sign-in returned no user."))
+      Result.success(user)
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun signUpWithEmail(displayName: String, email: String, password: String): Result<FirebaseUser> {
+    val cleanName = displayName.trim().ifEmpty { "Shopper" }.take(80)
+    val cleanEmail = email.trim()
+    if (cleanEmail.isEmpty() || !cleanEmail.contains("@")) {
+      return Result.failure(IllegalArgumentException("Enter a valid email address."))
+    }
+    if (password.length < 6) {
+      return Result.failure(IllegalArgumentException("Password must be at least 6 characters."))
+    }
+    return try {
+      val result = auth.createUserWithEmailAndPassword(cleanEmail, password).await()
+      val user = result.user ?: return Result.failure(IllegalStateException("Signup returned no user."))
+      val profileUpdate = UserProfileChangeRequest.Builder()
+        .setDisplayName(cleanName)
         .build()
-
-    scope.launch {
-        try {
-            val activity = context as? Activity
-                ?: throw IllegalStateException("Activity context required for Credential Manager sign-in")
-            val cred = credentialManager.getCredential(activity, request).credential
-            if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                val token = GoogleIdTokenCredential.createFrom(cred.data).idToken
-                Firebase.auth.signInWithCredential(GoogleAuthProvider.getCredential(token, null)).await()
-                onAuthSuccess()
-            } else {
-                onAuthError("Unexpected credential type returned")
-            }
-        } catch (e: GetCredentialCancellationException) {
-            Log.w("Auth", "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
-            onAuthCancelled()
-        } catch (e: Exception) {
-            Log.e("Auth", "Google Sign-In failed", e)
-            onAuthError(e.localizedMessage ?: "Sign in failed")
-        }
+      runCatching { user.updateProfile(profileUpdate).await() }
+      runCatching { user.sendEmailVerification().await() }
+      Result.success(user)
+    } catch (e: Exception) {
+      Result.failure(e)
     }
-}
+  }
 
-fun signOutUser(
-    credentialManager: CredentialManager,
-    scope: CoroutineScope,
-    onSignOutComplete: () -> Unit = {}
-) {
-    scope.launch {
-        withContext(NonCancellable) {
-            try {
-                credentialManager.clearCredentialState(ClearCredentialStateRequest())
-            } catch (e: Exception) {
-                Log.w("Auth", "Failed to clear credential state: ${e.message}")
-            } finally {
-                Firebase.auth.signOut()
-                onSignOutComplete()
-            }
-        }
+  suspend fun sendPasswordReset(email: String): Result<Unit> {
+    val cleanEmail = email.trim()
+    if (cleanEmail.isEmpty() || !cleanEmail.contains("@")) {
+      return Result.failure(IllegalArgumentException("Enter your account email first."))
     }
+    return try {
+      auth.sendPasswordResetEmail(cleanEmail).await()
+      Result.success(Unit)
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun resendVerificationEmail(): Result<Unit> {
+    val user = auth.currentUser ?: return Result.failure(IllegalStateException("Not signed in."))
+    return try {
+      user.sendEmailVerification().await()
+      Result.success(Unit)
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  fun signOut() {
+    auth.signOut()
+  }
 }

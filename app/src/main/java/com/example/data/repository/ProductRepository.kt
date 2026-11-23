@@ -1,329 +1,259 @@
 package com.example.data.repository
 
+import com.example.data.local.CachedProductDao
 import com.example.data.local.CachedProductEntity
-import com.example.data.local.ProductCacheDao
 import com.example.data.model.CatalogProduct
 import com.example.data.model.OfferAvailability
 import com.example.data.model.ProductOffer
 import com.example.data.model.VerificationStatus
 import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.remote.OpenFoodFactsProductDto
-import com.google.firebase.Firebase
-import com.google.firebase.auth.auth
-import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreException
-import com.google.firebase.firestore.snapshots
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
-interface ProductDataAdapter {
-    val providerName: String
-    suspend fun fetchByBarcode(barcode: String): CatalogProduct?
-    suspend fun search(query: String): List<CatalogProduct>
-}
-
-class OpenFoodFactsAdapter(
-    private val api: OpenFoodFactsApi
-) : ProductDataAdapter {
-    override val providerName: String = "Open Food Facts"
-
-    override suspend fun fetchByBarcode(barcode: String): CatalogProduct? {
-        return try {
-            val response = api.getProductByBarcode(barcode)
-            if (response.status == 1 && response.product != null) {
-                mapDto(barcode, response.product)
-            } else {
-                null
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    override suspend fun search(query: String): List<CatalogProduct> {
-        return try {
-            val response = api.searchProducts(query)
-            response.products.mapNotNull { dto ->
-                val code = dto.code?.trim().orEmpty()
-                if (code.isBlank()) null else mapDto(code, dto)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    private fun mapDto(barcode: String, dto: OpenFoodFactsProductDto): CatalogProduct? {
-        val name = dto.productName?.trim()?.takeIf { it.isNotBlank() }
-            ?: dto.genericName?.trim()?.takeIf { it.isNotBlank() }
-            ?: return null
-        val descriptionParts = listOfNotNull(
-            dto.quantity?.trim()?.takeIf { it.isNotBlank() }?.let { "Package: $it" },
-            dto.genericName?.trim()?.takeIf { it.isNotBlank() && it != name },
-            dto.ingredientsText?.trim()?.takeIf { it.isNotBlank() }?.let { "Ingredients: ${it.take(260)}" }
-        )
-        return CatalogProduct(
-            id = barcode,
-            barcode = barcode,
-            name = name.take(160),
-            brand = dto.brands?.trim()?.take(100).orEmpty(),
-            category = dto.categories?.split(",")?.firstOrNull()?.trim()?.take(80).orEmpty(),
-            description = descriptionParts.joinToString(" • ").take(600),
-            imageUrl = (dto.imageFrontUrl ?: dto.imageUrl)?.trim()?.take(500).orEmpty(),
-            manufacturer = dto.manufacturingPlaces?.trim()?.take(120).orEmpty(),
-            countryOfOrigin = (dto.origins ?: dto.countries)?.trim()?.take(80).orEmpty(),
-            dataProvider = "Open Food Facts",
-            attributionText = "Data provided by Open Food Facts contributors under ODbL 1.0",
-            verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-            submittedBy = "openfoodfacts"
-        )
-    }
-}
-
 sealed interface ProductLookupOutcome {
-    data class Found(val product: CatalogProduct, val fromOfflineCache: Boolean = false) : ProductLookupOutcome
-    data class NotFound(val barcode: String) : ProductLookupOutcome
+  data class Found(val product: CatalogProduct, val fromOfflineCache: Boolean) : ProductLookupOutcome
+  data class NotFound(val barcode: String) : ProductLookupOutcome
 }
 
 class ProductRepository(
-    private val db: FirebaseFirestore,
-    private val productCacheDao: ProductCacheDao,
-    private val primaryAdapter: ProductDataAdapter = OpenFoodFactsAdapter(OpenFoodFactsApi.create())
+  private val db: FirebaseFirestore,
+  private val auth: FirebaseAuth,
+  private val api: OpenFoodFactsApi,
+  private val cachedProductDao: CachedProductDao,
 ) {
-    private val auth = Firebase.auth
+  private val safeIdRegex = Regex("^[a-zA-Z0-9_-]+$")
 
-    fun observeCachedCatalog(): Flow<List<CatalogProduct>> =
-        productCacheDao.observeAll().map { entities -> entities.map { it.toDomain() } }
+  private fun isSafeId(id: String): Boolean =
+    id.isNotEmpty() && id.length <= 128 && safeIdRegex.matches(id)
 
-    suspend fun lookupProduct(barcode: String): ProductLookupOutcome {
-        val cleanBarcode = barcode.trim()
-        val isAuthenticated = auth.currentUser != null
+  fun observeCachedCatalog(): Flow<List<CatalogProduct>> =
+    cachedProductDao.observeAll().map { list -> list.map { it.toCatalogProduct() } }
 
-        // Priority 1 & 2: Verified merchant / licensed provider in Firestore (if signed in)
-        val firestoreDoc = if (isAuthenticated) {
-            fetchCatalogFromFirestore(cleanBarcode)
-        } else {
-            null
-        }
-        if (firestoreDoc != null) {
-            val status = VerificationStatus.safeValueOf(firestoreDoc.verificationStatus)
-            if (status == VerificationStatus.VERIFIED_MERCHANT ||
-                status == VerificationStatus.LICENSED_PROVIDER
-            ) {
-                productCacheDao.upsert(firestoreDoc.toEntity())
-                return ProductLookupOutcome.Found(firestoreDoc)
-            }
-        }
+  suspend fun lookupByBarcode(barcode: String): ProductLookupOutcome {
+    val clean = barcode.trim()
+    val firestoreDoc = fetchCatalogFromFirestore(clean)
 
-        // Priority 3: Open Food Facts (live REST API)
-        val remoteProduct = primaryAdapter.fetchByBarcode(cleanBarcode)
-        if (remoteProduct != null) {
-            productCacheDao.upsert(remoteProduct.toEntity())
-            return ProductLookupOutcome.Found(remoteProduct)
-        }
-
-        // Offline fallback from local Room cache
-        val cached = productCacheDao.getByBarcode(cleanBarcode)
-        if (cached != null) {
-            return ProductLookupOutcome.Found(cached.toDomain(), fromOfflineCache = true)
-        }
-
-        // Priority 4: User-submitted unverified record from Firestore
-        if (firestoreDoc != null) {
-            productCacheDao.upsert(firestoreDoc.toEntity())
-            return ProductLookupOutcome.Found(firestoreDoc)
-        }
-
-        return ProductLookupOutcome.NotFound(cleanBarcode)
+    if (firestoreDoc != null) {
+      val status = VerificationStatus.fromString(firestoreDoc.verificationStatus)
+      if (status == VerificationStatus.VERIFIED_MERCHANT || status == VerificationStatus.LICENSED_PROVIDER) {
+        cachedProductDao.upsertAll(listOf(CachedProductEntity.fromCatalogProduct(firestoreDoc)))
+        return ProductLookupOutcome.Found(firestoreDoc, fromOfflineCache = false)
+      }
     }
 
-    suspend fun searchCatalog(query: String): List<CatalogProduct> {
-        val clean = query.trim()
-        if (clean.isBlank()) return emptyList()
-        val remote = primaryAdapter.search(clean)
-        if (remote.isNotEmpty()) {
-            productCacheDao.upsertAll(remote.map { it.toEntity() })
-            return remote
-        }
-        return productCacheDao.searchLocal(clean).map { it.toDomain() }
+    val remoteProduct = try {
+      val response = api.getProductByBarcode(clean)
+      if (response.status == 1 && response.product != null) {
+        mapOffDto(clean, response.product)
+      } else null
+    } catch (_: Exception) {
+      null
     }
 
-    suspend fun submitUnverifiedProduct(
-        barcode: String,
-        name: String,
-        brand: String,
-        category: String,
-        description: String
-    ): Result<CatalogProduct> {
-        val path = "products_catalog/$barcode"
-        return try {
-            val uid = auth.currentUser?.uid
-                ?: error("Sign in with Google to submit missing product details.")
-            val cleanBarcode = barcode.trim()
-            require(isSafeFirestoreId(cleanBarcode)) {
-                "Only alphanumeric, hyphen, and underscore barcodes (1-128 chars) can be published to the shared catalog."
-            }
-            require(name.isNotBlank() && name.length <= 160) { "Product name is required (max 160 chars)" }
-            val product = CatalogProduct(
-                id = cleanBarcode,
-                barcode = cleanBarcode,
-                name = name.trim().take(160),
-                brand = brand.trim().take(100),
-                category = category.trim().take(80),
-                description = description.trim().take(600),
-                imageUrl = "",
-                manufacturer = "",
-                countryOfOrigin = "",
-                dataProvider = "Community Submission",
-                attributionText = "User-submitted product entry (Unverified)",
-                verificationStatus = VerificationStatus.USER_SUBMITTED_UNVERIFIED.name,
-                submittedBy = uid
+    if (remoteProduct != null) {
+      cachedProductDao.upsertAll(listOf(CachedProductEntity.fromCatalogProduct(remoteProduct)))
+      return ProductLookupOutcome.Found(remoteProduct, fromOfflineCache = false)
+    }
+
+    val cached = cachedProductDao.findByBarcode(clean)
+    if (cached != null) {
+      return ProductLookupOutcome.Found(cached.toCatalogProduct(), fromOfflineCache = true)
+    }
+
+    if (firestoreDoc != null) {
+      cachedProductDao.upsertAll(listOf(CachedProductEntity.fromCatalogProduct(firestoreDoc)))
+      return ProductLookupOutcome.Found(firestoreDoc, fromOfflineCache = false)
+    }
+
+    return ProductLookupOutcome.NotFound(clean)
+  }
+
+  suspend fun searchCatalog(query: String): List<CatalogProduct> {
+    val clean = query.trim()
+    if (clean.isEmpty()) return emptyList()
+
+    if (clean.matches(Regex("^\\d{8,14}$"))) {
+      val direct = lookupByBarcode(clean)
+      if (direct is ProductLookupOutcome.Found) {
+        return listOf(direct.product)
+      }
+    }
+
+    val remoteList = try {
+      api.searchProducts(clean).products.mapNotNull { dto ->
+        val code = dto.code?.trim().orEmpty()
+        if (code.isEmpty()) null else mapOffDto(code, dto)
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+
+    if (remoteList.isNotEmpty()) {
+      cachedProductDao.upsertAll(remoteList.map { CachedProductEntity.fromCatalogProduct(it) })
+      return remoteList
+    }
+
+    return cachedProductDao.search(clean).map { it.toCatalogProduct() }
+  }
+
+  fun observeOffersForProduct(barcode: String, countryCode: String): Flow<List<ProductOffer>> = callbackFlow {
+    if (auth.currentUser == null || !isSafeId(barcode)) {
+      trySend(emptyList())
+      close()
+      return@callbackFlow
+    }
+    val path = "products_catalog/$barcode/offers"
+    val reg = db.collection("products_catalog").document(barcode)
+      .collection("offers")
+      .whereEqualTo("countryCode", countryCode.uppercase().take(2))
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          if (auth.currentUser != null) {
+            close(
+              RuntimeException(
+                runCatching {
+                  FirestoreErrorHandler.handleFirestoreError(error, OperationType.LIST, path, auth)
+                }.exceptionOrNull()?.message ?: error.message,
+              ),
             )
-            db.collection("products_catalog").document(barcode.trim())
-                .set(product.toCreateMap())
-                .await()
-            productCacheDao.upsert(product.toEntity())
-            Result.success(product)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, path)
-            Result.failure(e)
+          }
+          return@addSnapshotListener
         }
-    }
+        val items = snap?.documents?.mapNotNull { doc ->
+          doc.toObject(ProductOffer::class.java)?.copy(id = doc.id)
+        }?.sortedBy { it.price } ?: emptyList()
+        trySend(items)
+      }
+    awaitClose { reg.remove() }
+  }
 
-    fun observeOffersForProduct(barcode: String, countryCode: String): Flow<List<ProductOffer>> = flow {
-        if (auth.currentUser == null || !isSafeFirestoreId(barcode)) {
-            emit(emptyList())
-            return@flow
-        }
-        val path = "products_catalog/$barcode/offers"
-        db.collection("products_catalog").document(barcode).collection("offers")
-            .whereEqualTo("countryCode", countryCode.uppercase())
-            .snapshots()
-            .map { snapshot ->
-                snapshot.toObjects(
-                    ProductOffer::class.java,
-                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                ).sortedBy { it.price }
-            }
-            .catch { error ->
-                val firestoreError = generateSequence(error) { it.cause }
-                    .filterIsInstance<FirebaseFirestoreException>()
-                    .firstOrNull()
-                if (firestoreError == null && error is CancellationException) throw error
-                if (auth.currentUser != null) {
-                    handleFirestoreError(firestoreError ?: error, OperationType.LIST, path)
-                }
-                emit(emptyList())
-            }
-            .collect { emit(it) }
-    }
+  suspend fun submitUnverifiedProduct(
+    barcode: String,
+    name: String,
+    brand: String,
+    category: String,
+    description: String,
+  ): CatalogProduct {
+    val uid = auth.currentUser?.uid ?: throw IllegalStateException("Sign in with Google to submit product details.")
+    val cleanBarcode = barcode.trim()
+    require(isSafeId(cleanBarcode)) { "Barcode must use alphanumeric, hyphen, or underscore characters." }
+    require(name.trim().isNotEmpty() && name.trim().length <= 160) { "Product name is required (max 160 chars)." }
 
-    suspend fun submitUnverifiedOffer(
-        barcode: String,
-        storeName: String,
-        price: Double,
-        currencyCode: String,
-        countryCode: String,
-        offerUrl: String
-    ): Result<Unit> {
-        val path = "products_catalog/$barcode/offers"
-        return try {
-            val uid = auth.currentUser?.uid
-                ?: error("Sign in with Google to submit a store price observation.")
-            require(isSafeFirestoreId(barcode)) {
-                "Offers can only be submitted for valid catalog barcode IDs."
-            }
-            require(storeName.isNotBlank() && storeName.length <= 100) { "Store name required" }
-            require(price > 0.0 && price <= 1_000_000.0) { "Price must be greater than zero" }
-            val docRef = db.collection("products_catalog").document(barcode)
-                .collection("offers").document()
-            val offer = ProductOffer(
-                id = docRef.id,
-                barcode = barcode,
-                storeName = storeName.trim().take(100),
-                price = price,
-                currencyCode = currencyCode.uppercase().take(3),
-                countryCode = countryCode.uppercase().take(2),
-                availabilityStatus = OfferAvailability.UNVERIFIED.name,
-                verified = false,
-                offerUrl = offerUrl.trim().take(500),
-                submittedBy = uid
-            )
-            docRef.set(offer.toCreateMap()).await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, path)
-            Result.failure(e)
-        }
-    }
-
-    private fun isSafeFirestoreId(id: String): Boolean {
-        return id.length in 1..128 && SAFE_DOC_ID_REGEX.matches(id)
-    }
-
-    private suspend fun fetchCatalogFromFirestore(barcode: String): CatalogProduct? {
-        if (!isSafeFirestoreId(barcode)) return null
-        return try {
-            val snap = db.collection("products_catalog").document(barcode).get().await()
-            if (snap.exists()) {
-                snap.toObject(
-                    CatalogProduct::class.java,
-                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                )
-            } else {
-                null
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.GET, "products_catalog/$barcode")
-            null
-        }
-    }
-
-    private companion object {
-        val SAFE_DOC_ID_REGEX = Regex("^[a-zA-Z0-9_\\-]+$")
-    }
-
-    private fun CatalogProduct.toEntity() = CachedProductEntity(
-        barcode = barcode,
-        name = name,
-        brand = brand,
-        category = category,
-        description = description,
-        imageUrl = imageUrl,
-        manufacturer = manufacturer,
-        countryOfOrigin = countryOfOrigin,
-        dataProvider = dataProvider,
-        attributionText = attributionText,
-        verificationStatus = verificationStatus,
-        lastUpdatedMillis = System.currentTimeMillis()
+    val path = "products_catalog/$cleanBarcode"
+    val payload = hashMapOf<String, Any>(
+      "barcode" to cleanBarcode.take(64),
+      "name" to name.trim().take(160),
+      "brand" to brand.trim().take(100),
+      "category" to category.trim().take(80),
+      "description" to description.trim().take(600),
+      "imageUrl" to "",
+      "manufacturer" to "",
+      "countryOfOrigin" to "",
+      "dataProvider" to "Community Submission",
+      "attributionText" to "User-submitted product entry (Unverified)",
+      "verificationStatus" to VerificationStatus.USER_SUBMITTED_UNVERIFIED.name,
+      "submittedBy" to uid.take(128),
+      "createdAt" to FieldValue.serverTimestamp(),
+      "updatedAt" to FieldValue.serverTimestamp(),
     )
 
-    private fun CachedProductEntity.toDomain() = CatalogProduct(
-        id = barcode,
-        barcode = barcode,
-        name = name,
-        brand = brand,
-        category = category,
-        description = description,
-        imageUrl = imageUrl,
-        manufacturer = manufacturer,
-        countryOfOrigin = countryOfOrigin,
-        dataProvider = dataProvider,
-        attributionText = attributionText,
-        verificationStatus = verificationStatus
+    try {
+      db.collection("products_catalog").document(cleanBarcode).set(payload).await()
+      val created = CatalogProduct(
+        id = cleanBarcode,
+        barcode = cleanBarcode.take(64),
+        name = name.trim().take(160),
+        brand = brand.trim().take(100),
+        category = category.trim().take(80),
+        description = description.trim().take(600),
+        dataProvider = "Community Submission",
+        attributionText = "User-submitted product entry (Unverified)",
+        verificationStatus = VerificationStatus.USER_SUBMITTED_UNVERIFIED.name,
+        submittedBy = uid.take(128),
+      )
+      cachedProductDao.upsertAll(listOf(CachedProductEntity.fromCatalogProduct(created)))
+      return created
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
+    }
+  }
+
+  suspend fun submitUnverifiedOffer(
+    barcode: String,
+    storeName: String,
+    price: Double,
+    currencyCode: String,
+    countryCode: String,
+    offerUrl: String,
+  ) {
+    val uid = auth.currentUser?.uid ?: throw IllegalStateException("Sign in with Google to report a price.")
+    val cleanBarcode = barcode.trim()
+    require(isSafeId(cleanBarcode)) { "Invalid catalog barcode ID." }
+    require(storeName.trim().isNotEmpty() && storeName.trim().length <= 100) { "Store name is required." }
+    require(price > 0.0 && price <= 1_000_000.0) { "Price must be greater than zero." }
+
+    val path = "products_catalog/$cleanBarcode/offers"
+    val payload = hashMapOf<String, Any>(
+      "barcode" to cleanBarcode.take(64),
+      "storeName" to storeName.trim().take(100),
+      "price" to price,
+      "currencyCode" to currencyCode.trim().uppercase().take(3),
+      "countryCode" to countryCode.trim().uppercase().take(2),
+      "availabilityStatus" to OfferAvailability.UNVERIFIED.name,
+      "verified" to false,
+      "offerUrl" to offerUrl.trim().take(500),
+      "submittedBy" to uid.take(128),
+      "lastVerifiedAt" to FieldValue.serverTimestamp(),
     )
+
+    try {
+      db.collection("products_catalog").document(cleanBarcode)
+        .collection("offers").document().set(payload).await()
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
+    }
+  }
+
+  private suspend fun fetchCatalogFromFirestore(barcode: String): CatalogProduct? {
+    if (!isSafeId(barcode) || auth.currentUser == null) return null
+    val path = "products_catalog/$barcode"
+    return try {
+      val snap = db.collection("products_catalog").document(barcode).get().await()
+      if (!snap.exists()) null else snap.toObject(CatalogProduct::class.java)?.copy(id = snap.id)
+    } catch (e: Exception) {
+      val msg = e.message?.lowercase().orEmpty()
+      if (msg.contains("permission") || msg.contains("insufficient")) null
+      else FirestoreErrorHandler.handleFirestoreError(e, OperationType.GET, path, auth)
+    }
+  }
+
+  private fun mapOffDto(barcode: String, dto: OpenFoodFactsProductDto): CatalogProduct? {
+    val name = dto.productName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val desc = listOfNotNull(
+      dto.genericName?.trim()?.takeIf { it.isNotEmpty() },
+      dto.ingredientsText?.trim()?.takeIf { it.isNotEmpty() }?.let { "Ingredients: $it" },
+    ).joinToString("\n")
+    return CatalogProduct(
+      id = barcode,
+      barcode = barcode.take(64),
+      name = name.take(160),
+      brand = dto.brands?.trim().orEmpty().take(100),
+      category = dto.categories?.split(",")?.firstOrNull()?.trim().orEmpty().take(80),
+      description = desc.take(600),
+      imageUrl = (dto.imageFrontUrl ?: dto.imageUrl).orEmpty().take(500),
+      manufacturer = dto.manufacturingPlaces?.trim().orEmpty().take(120),
+      countryOfOrigin = dto.countries?.split(",")?.firstOrNull()?.trim().orEmpty().take(80),
+      dataProvider = "Open Food Facts",
+      attributionText = "Data © Open Food Facts contributors (ODbL)",
+      verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
+      submittedBy = "openfoodfacts",
+    )
+  }
 }

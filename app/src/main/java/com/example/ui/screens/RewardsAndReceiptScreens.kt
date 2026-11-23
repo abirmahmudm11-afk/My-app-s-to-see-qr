@@ -1,15 +1,12 @@
 package com.example.ui.screens
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,34 +21,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ReceiptLong
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.HourglassTop
-import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.CardGiftcard
+import androidx.compose.material.icons.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,1027 +49,756 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import com.example.R
-import com.example.data.model.Campaign
-import com.example.data.model.ReceiptReviewStatus
-import com.example.data.model.ReceiptSubmission
+import com.example.data.model.PayoutMethod
+import com.example.data.model.PayoutStatus
 import com.example.data.model.RewardTransaction
-import com.example.data.model.RewardWallet
 import com.example.data.model.TransactionStatus
-import com.example.domain.MarketCatalog
+import com.example.domain.MarketConfig
 import com.example.ui.components.GuestModeBanner
+import com.example.ui.components.ReceiptStatusBadge
 import com.example.ui.components.SandboxCashbackBanner
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.formatTimestamp
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.BentoButter
-import com.example.ui.theme.BentoLime
-import com.example.ui.theme.BentoMint
-import com.example.ui.theme.BentoPeach
-import com.example.ui.theme.DarkBentoButter
-import com.example.ui.theme.DarkBentoPeach
-import com.example.ui.theme.Emerald600
-import com.example.ui.theme.Emerald800
-import com.example.ui.theme.Emerald900
-import com.example.ui.theme.InkBlack
-import com.example.ui.theme.JetBrainsMonoFontFamily
-import com.example.ui.theme.Mint100
-import com.example.ui.theme.OnBentoButter
-import com.example.ui.theme.OnBentoMint
-import com.example.ui.theme.OnBentoPeach
+import com.example.ui.theme.AmberNotice
+import com.example.ui.theme.AmberSoftTint
+import com.example.ui.theme.CobaltInfo
+import com.example.ui.theme.CobaltSoftTint
+import com.example.ui.theme.CrimsonAlert
+import com.example.ui.theme.CrimsonSoftTint
+import com.example.ui.theme.DeepObsidian
+import com.example.ui.theme.ElectricLime
+import com.example.ui.theme.EmeraldSoftTint
+import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.ObsidianOnLime
+import com.example.ui.theme.SwatchMint
+import com.example.ui.viewmodel.MainUiState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private data class RewardTierSpec(
+  val title: String,
+  val thresholdPts: Long,
+)
 
 @Composable
 fun RewardsScreen(
-    isGuest: Boolean,
-    wallet: RewardWallet?,
-    transactions: List<RewardTransaction>,
-    receipts: List<ReceiptSubmission>,
-    feedbackMessage: String?,
-    onClearFeedback: () -> Unit,
-    onRedeemVoucher: (RewardWallet, Long, String) -> Unit,
-    onNavigateSubmitReceipt: () -> Unit,
-    onOpenTransaction: (String) -> Unit,
-    onNavigateTerms: () -> Unit,
-    onRequestSignIn: () -> Unit,
-    modifier: Modifier = Modifier
+  uiState: MainUiState,
+  onSubmitReceipt: (String?) -> Unit,
+  onRedeemVoucher: (Long, String) -> Unit,
+  onRequestPayout: (Long, String, PayoutMethod, String) -> Unit,
+  onOpenTransaction: (String) -> Unit,
+  onSignInRequested: () -> Unit,
 ) {
-    val isDark = isSystemInDarkTheme()
+  val vouchers = remember {
+    listOf(
+      Triple("Grocery Sandbox Voucher", 100L, "$0 redemption fee • Instant payout ticket"),
+      Triple("Coffee Partner Credit", 250L, "$0 redemption fee • Auditable sandbox pass"),
+      Triple("Supermarket Bonus Tier", 500L, "$0 redemption fee • Priority sandbox reward"),
+    )
+  }
 
-    var walletInfoTab by remember { mutableStateOf("Breakdown") }
+  var showPayoutDialog by remember { mutableStateOf(false) }
+  var payoutPointsInput by remember { mutableStateOf("100") }
+  var payoutTitleInput by remember { mutableStateOf("Cashout Payout") }
+  var payoutHandleInput by remember { mutableStateOf(uiState.firebaseUser?.email ?: "") }
+  var selectedMethod by remember { mutableStateOf(PayoutMethod.PAYPAL_SANDBOX) }
 
-    if (isGuest) {
-        LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+  LazyColumn(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background),
+    contentPadding = PaddingValues(16.dp),
+    verticalArrangement = Arrangement.spacedBy(14.dp),
+  ) {
+    item {
+      Text("Rewards & Payouts", style = MaterialTheme.typography.headlineMedium)
+      Spacer(Modifier.height(6.dp))
+      SandboxCashbackBanner()
+    }
+
+    if (uiState.firebaseUser == null) {
+      item {
+        GuestModeBanner(onSignInClick = onSignInRequested)
+      }
+    }
+
+    // Visual Radial Progress Gauge toward Next Tier / Reward Threshold
+    item {
+      RewardTierProgressGauge(
+        availablePoints = uiState.wallet.availablePoints,
+        reducedMotion = uiState.preferences.reducedMotionEnabled,
+      )
+    }
+
+    // Obsidian Wallet Summary Card with Payout Trigger
+    item {
+      Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = DeepObsidian),
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Rewards Ledger", style = MaterialTheme.typography.headlineLarge)
-                    OutlinedButton(onClick = onNavigateTerms) {
-                        Text("Rules")
-                    }
-                }
+          Text("WALLET LEDGER SUMMARY", style = MaterialTheme.typography.labelSmall, color = ElectricLime)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Column {
+              Text("${uiState.wallet.availablePoints} PTS", style = MaterialTheme.typography.displayMedium, color = ElectricLime)
+              Text("Available balance", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB5C4BD))
             }
-
-            // Layered Stacked Card Deck Preview
-            item {
-                Box(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    Surface(
-                        color = BentoLime,
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp)
-                            .height(48.dp)
-                    ) {}
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp)
-                            .clip(RoundedCornerShape(26.dp))
-                            .background(Brush.linearGradient(listOf(InkBlack, Emerald800)))
-                            .padding(20.dp)
-                    ) {
-                        Canvas(modifier = Modifier.matchParentSize()) {
-                            drawCircle(
-                                color = BentoLime.copy(alpha = 0.08f),
-                                radius = size.width * 0.48f,
-                                center = Offset(size.width * 0.92f, size.height * 0.15f),
-                                style = Stroke(width = 2.dp.toPx())
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Surface(
-                                    color = BentoLime,
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(
-                                        text = "SANDBOX PASS",
-                                        fontFamily = JetBrainsMonoFontFamily,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = InkBlack,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = "Audited Points\n& Voucher Deck",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Sign in to submit receipts & unlock ledger tracking",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.78f)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Surface(
-                                shape = RoundedCornerShape(18.dp),
-                                color = BentoMint,
-                                modifier = Modifier.size(width = 96.dp, height = 84.dp)
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.img_wallet_trophy),
-                                    contentDescription = "Rewards wallet illustration",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        }
-                    }
-                }
+            Column(horizontalAlignment = Alignment.End) {
+              Text("${uiState.wallet.pendingPoints} PTS", style = MaterialTheme.typography.titleLarge, color = Color.White)
+              Text("Pending review", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB5C4BD))
             }
-
-            item {
-                VerificationPipelineCard()
+          }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Surface(modifier = Modifier.weight(1f), color = Color(0xFF192420), shape = RoundedCornerShape(10.dp)) {
+              Column(Modifier.padding(10.dp)) {
+                Text("${uiState.wallet.redeemedPoints} PTS", style = MaterialTheme.typography.titleMedium, color = SwatchMint)
+                Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA2B3AA))
+              }
             }
-
-            item {
-                GuestModeBanner(onSignInClick = onRequestSignIn)
+            Surface(modifier = Modifier.weight(1f), color = Color(0xFF192420), shape = RoundedCornerShape(10.dp)) {
+              Column(Modifier.padding(10.dp)) {
+                Text("100 PTS", style = MaterialTheme.typography.titleMedium, color = ElectricLime)
+                Text("Payout minimum ($0 fee)", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA2B3AA))
+              }
             }
-            item {
-                SandboxCashbackBanner()
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+              onClick = { onSubmitReceipt(null) },
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(14.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = ElectricLime, contentColor = ObsidianOnLime),
+            ) {
+              Icon(Icons.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text("Log Receipt")
             }
+            OutlinedButton(
+              onClick = { showPayoutDialog = true },
+              enabled = uiState.firebaseUser != null,
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.5f)),
+            ) {
+              Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = ElectricLime, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text("Request Payout", color = ElectricLime)
+            }
+          }
         }
-        return
+      }
     }
 
-    val safeWallet = wallet ?: RewardWallet()
-    val progressRatio = (safeWallet.availablePoints.toFloat() / 100f).coerceIn(0.06f, 1f)
-    val totalVolume = (safeWallet.availablePoints + safeWallet.pendingPoints + safeWallet.redeemedPoints + safeWallet.reversedPoints)
-        .coerceAtLeast(1L).toFloat()
-
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Rewards Ledger", style = MaterialTheme.typography.headlineLarge)
-                OutlinedButton(onClick = onNavigateTerms) {
-                    Text("Rules & Expiry")
-                }
+    // Quick Vouchers
+    item { SectionHeader("Redeem Sandbox Vouchers") }
+    items(vouchers) { (title, cost, subtitle) ->
+      val canRedeem = uiState.firebaseUser != null && uiState.wallet.availablePoints >= cost
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(14.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Icon(Icons.Rounded.CardGiftcard, contentDescription = null, tint = EmeraldTrust)
+            Column {
+              Text(title, style = MaterialTheme.typography.titleMedium)
+              Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+          }
+          Spacer(Modifier.width(8.dp))
+          Button(
+            onClick = { onRedeemVoucher(cost, title) },
+            enabled = canRedeem,
+            shape = RoundedCornerShape(12.dp),
+          ) {
+            Text("$cost PTS")
+          }
         }
-
-        if (feedbackMessage != null) {
-            item {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth().clickable { onClearFeedback() }
-                ) {
-                    Text(
-                        text = feedbackMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-            }
-        }
-
-        // Layered Stacked Card Deck (Volt-Lime peek card behind Metallic Obsidian Pass)
-        item {
-            Box(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                Surface(
-                    color = BentoLime,
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp)
-                        .height(48.dp)
-                ) {}
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp)
-                        .clip(RoundedCornerShape(26.dp))
-                        .background(Brush.linearGradient(listOf(InkBlack, Emerald800)))
-                        .padding(20.dp)
-                ) {
-                    Canvas(modifier = Modifier.matchParentSize()) {
-                        drawCircle(
-                            color = BentoLime.copy(alpha = 0.09f),
-                            radius = size.width * 0.45f,
-                            center = Offset(size.width * 0.9f, size.height * 0.1f),
-                            style = Stroke(width = 2.dp.toPx())
-                        )
-                    }
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Surface(
-                                    color = BentoLime,
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(
-                                        text = "SANDBOX PASS",
-                                        fontFamily = JetBrainsMonoFontFamily,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = InkBlack,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = "${safeWallet.availablePoints} PTS",
-                                    fontFamily = JetBrainsMonoFontFamily,
-                                    style = MaterialTheme.typography.displayMedium,
-                                    color = Color.White
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = BentoMint,
-                                modifier = Modifier.size(width = 88.dp, height = 70.dp)
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.img_wallet_trophy),
-                                    contentDescription = "Wallet trophy",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Voucher threshold",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.72f)
-                            )
-                            Text(
-                                text = "${safeWallet.availablePoints.coerceAtMost(100)} / 100 PTS",
-                                fontFamily = JetBrainsMonoFontFamily,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = BentoLime
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.White.copy(alpha = 0.16f))
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(progressRatio)
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(BentoLime)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Interactive Breakdown vs Pipeline Card
-        item {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                shape = RoundedCornerShape(22.dp),
-                shadowElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (walletInfoTab == "Breakdown") "Ledger Breakdown" else "Verification Flow",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Row(modifier = Modifier.padding(3.dp)) {
-                                listOf("Breakdown", "How It Works").forEach { tab ->
-                                    val selected = walletInfoTab == tab
-                                    Surface(
-                                        color = if (selected) InkBlack else Color.Transparent,
-                                        shape = RoundedCornerShape(11.dp),
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(11.dp))
-                                            .clickable { walletInfoTab = tab }
-                                    ) {
-                                        Text(
-                                            text = tab,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (selected) BentoLime else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    if (walletInfoTab == "Breakdown") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(12.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                        ) {
-                            val availW = (safeWallet.availablePoints / totalVolume).coerceAtLeast(0.05f)
-                            val pendW = (safeWallet.pendingPoints / totalVolume).coerceAtLeast(0.05f)
-                            val redW = (safeWallet.redeemedPoints / totalVolume).coerceAtLeast(0.05f)
-                            val revW = (safeWallet.reversedPoints / totalVolume).coerceAtLeast(0.05f)
-                            Box(modifier = Modifier.weight(availW).height(12.dp).background(Emerald600))
-                            Box(modifier = Modifier.weight(pendW).height(12.dp).background(AmberWarning))
-                            Box(modifier = Modifier.weight(redW).height(12.dp).background(BentoLime))
-                            Box(modifier = Modifier.weight(revW).height(12.dp).background(BentoPeach))
-                        }
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            WalletBentoTile(
-                                label = "Pending",
-                                points = safeWallet.pendingPoints,
-                                bgColor = if (isDark) DarkBentoButter else BentoButter,
-                                inkColor = if (isDark) Color(0xFFFFE58F) else OnBentoButter,
-                                modifier = Modifier.weight(1f)
-                            )
-                            WalletBentoTile(
-                                label = "Redeemed",
-                                points = safeWallet.redeemedPoints,
-                                bgColor = if (isDark) Emerald900 else BentoMint,
-                                inkColor = if (isDark) Color.White else OnBentoMint,
-                                modifier = Modifier.weight(1f)
-                            )
-                            WalletBentoTile(
-                                label = "Reversed",
-                                points = safeWallet.reversedPoints,
-                                bgColor = if (isDark) DarkBentoPeach else BentoPeach,
-                                inkColor = if (isDark) Color(0xFFFFC1AA) else OnBentoPeach,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            PipelineStepNode(
-                                icon = Icons.AutoMirrored.Filled.ReceiptLong,
-                                label = "1. Submit",
-                                bg = BentoButter,
-                                ink = OnBentoButter,
-                                modifier = Modifier.weight(1f)
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.width(18.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
-                            PipelineStepNode(
-                                icon = Icons.Default.HourglassTop,
-                                label = "2. Review",
-                                bg = BentoPeach,
-                                ink = OnBentoPeach,
-                                modifier = Modifier.weight(1f)
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.width(18.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
-                            PipelineStepNode(
-                                icon = Icons.Default.Verified,
-                                label = "3. Credit",
-                                bg = BentoMint,
-                                ink = OnBentoMint,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Submit Receipt CTA + Sandbox Voucher Redemption
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Button(
-                    onClick = onNavigateSubmitReceipt,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Emerald600,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp)
-                        .testTag("rewards_submit_receipt_button")
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Submit Receipt")
-                }
-                OutlinedButton(
-                    onClick = { onRedeemVoucher(safeWallet, 100L, "Eco Partner Sandbox Pass") },
-                    enabled = safeWallet.availablePoints >= 100L,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp)
-                        .testTag("rewards_redeem_voucher_button")
-                ) {
-                    Icon(Icons.Default.CardGiftcard, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Redeem 100")
-                }
-            }
-        }
-
-        item {
-            SandboxCashbackBanner()
-        }
-
-        // Receipt Verification Queue Status
-        item {
-            SectionHeader(title = "Receipt Submissions (${receipts.size})")
-        }
-        if (receipts.isEmpty()) {
-            item {
-                Text(
-                    text = "No receipts submitted yet. Receipts require human review before any points are credited.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            items(receipts, key = { it.id }) { receipt ->
-                val status = ReceiptReviewStatus.safeValueOf(receipt.reviewStatus)
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(receipt.storeName, style = MaterialTheme.typography.titleMedium)
-                            ReceiptStatusChip(status = status)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${MarketCatalog.formatMoney(receipt.totalAmount, receipt.currencyCode)} • Ref: ${receipt.receiptReference} • ${receipt.transactionDate}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (!receipt.rejectionReason.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Reason: ${receipt.rejectionReason}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Ledger Transactions
-        item {
-            SectionHeader(title = "Ledger History (${transactions.size})")
-        }
-        if (transactions.isEmpty()) {
-            item {
-                Text(
-                    text = "No ledger entries yet. Approved receipts and sandbox redemptions appear here with idempotency and audit IDs.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            items(transactions, key = { it.id }) { tx ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenTransaction(tx.id) }
-                        .testTag("tx_card_${tx.id}")
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(tx.sourceActivity, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = "${tx.status} • ${formatTimestamp(tx.createdAt)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "Audit: ${tx.auditReference}",
-                                fontFamily = JetBrainsMonoFontFamily,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        val sign = if (tx.transactionType == "REDEMPTION" || tx.transactionType == "REVERSAL") "-" else "+"
-                        Text(
-                            text = "$sign${tx.amount} PTS",
-                            fontFamily = JetBrainsMonoFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = if (sign == "+") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-        }
+      }
     }
-}
 
-@Composable
-private fun VerificationPipelineCard() {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    // Payout Requests Queue
+    item { SectionHeader("My Payout Requests (${uiState.payoutRequests.size})") }
+    if (uiState.payoutRequests.isEmpty()) {
+      item {
+        Text(
+          "No payout requests yet. Once you reach 100 PTS, submit a payout or voucher request for admin fulfillment.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    } else {
+      items(uiState.payoutRequests, key = { it.id }) { req ->
+        val pStatus = PayoutStatus.fromString(req.status)
+        val (bg, fg) = when (pStatus) {
+          PayoutStatus.PAID, PayoutStatus.APPROVED -> EmeraldSoftTint to EmeraldTrust
+          PayoutStatus.REJECTED -> CrimsonSoftTint to CrimsonAlert
+          PayoutStatus.PENDING -> AmberSoftTint to AmberNotice
+        }
+        Card(
+          shape = RoundedCornerShape(16.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text("${req.rewardTitle} (${req.pointsAmount} PTS)", style = MaterialTheme.typography.titleMedium)
+              Surface(color = bg, shape = RoundedCornerShape(8.dp)) {
+                Text(
+                  text = pStatus.name,
+                  style = MaterialTheme.typography.labelSmall,
+                  color = fg,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+              }
+            }
             Text(
-                text = "Receipt Verification Lifecycle",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
+              "${PayoutMethod.fromString(req.payoutMethod).label} • ${req.destinationHandle}",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                PipelineStepNode(
-                    icon = Icons.AutoMirrored.Filled.ReceiptLong,
-                    label = "1. Submit",
-                    bg = BentoButter,
-                    ink = OnBentoButter,
-                    modifier = Modifier.weight(1f)
-                )
-                HorizontalDivider(
-                    modifier = Modifier.width(18.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                PipelineStepNode(
-                    icon = Icons.Default.HourglassTop,
-                    label = "2. Review",
-                    bg = BentoPeach,
-                    ink = OnBentoPeach,
-                    modifier = Modifier.weight(1f)
-                )
-                HorizontalDivider(
-                    modifier = Modifier.width(18.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                PipelineStepNode(
-                    icon = Icons.Default.Verified,
-                    label = "3. Credit",
-                    bg = BentoMint,
-                    ink = OnBentoMint,
-                    modifier = Modifier.weight(1f)
-                )
+            req.adminNotes?.takeIf { it.isNotBlank() }?.let { note ->
+              Text("Admin note: $note", style = MaterialTheme.typography.bodySmall, color = CobaltInfo)
             }
+          }
         }
+      }
     }
+
+    // Submitted Receipts Queue
+    item { SectionHeader("Receipt Submissions (${uiState.receipts.size})") }
+    if (uiState.receipts.isEmpty()) {
+      item {
+        Text(
+          "No receipts submitted yet. Every receipt is SHA-256 hashed to prevent duplicate claims.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    } else {
+      items(uiState.receipts, key = { it.id }) { receipt ->
+        Card(
+          shape = RoundedCornerShape(16.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(receipt.storeName, style = MaterialTheme.typography.titleMedium)
+              ReceiptStatusBadge(statusRaw = receipt.reviewStatus)
+            }
+            Text(
+              "${MarketConfig.formatMoney(receipt.totalAmount, receipt.currencyCode)} • ${receipt.transactionDate} • Ref ${receipt.receiptReference}",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            receipt.rejectionReason?.takeIf { it.isNotBlank() }?.let { reason ->
+              Text("Note: $reason", style = MaterialTheme.typography.bodySmall, color = CrimsonAlert)
+            }
+          }
+        }
+      }
+    }
+
+    // Point Ledger History
+    item { SectionHeader("Point Ledger (${uiState.transactions.size})") }
+    if (uiState.transactions.isEmpty()) {
+      item {
+        Text(
+          "Ledger transactions will appear once a receipt or payout is processed.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    } else {
+      items(uiState.transactions, key = { it.id }) { tx ->
+        TransactionRowCard(tx = tx, onClick = { onOpenTransaction(tx.id) })
+      }
+    }
+
+    item { Spacer(Modifier.height(16.dp)) }
+  }
+
+  if (showPayoutDialog) {
+    AlertDialog(
+      onDismissRequest = { showPayoutDialog = false },
+      title = { Text("Request Reward Payout") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(
+            "Available: ${uiState.wallet.availablePoints} PTS • Minimum: 100 PTS",
+            style = MaterialTheme.typography.bodySmall,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PayoutMethod.entries.forEach { method ->
+              val selected = selectedMethod == method
+              Surface(
+                modifier = Modifier
+                  .weight(1f)
+                  .clickable { selectedMethod = method },
+                color = if (selected) DeepObsidian else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(10.dp),
+              ) {
+                Text(
+                  text = method.label.substringBefore(" "),
+                  style = MaterialTheme.typography.labelSmall,
+                  color = if (selected) ElectricLime else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                )
+              }
+            }
+          }
+          OutlinedTextField(
+            value = payoutPointsInput,
+            onValueChange = { payoutPointsInput = it },
+            label = { Text("Points to Redeem (>= 100)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+          )
+          OutlinedTextField(
+            value = payoutTitleInput,
+            onValueChange = { payoutTitleInput = it },
+            label = { Text("Reward / Payout Label") },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          OutlinedTextField(
+            value = payoutHandleInput,
+            onValueChange = { payoutHandleInput = it },
+            label = { Text("Destination Email / Account Handle") },
+            modifier = Modifier.fillMaxWidth(),
+          )
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            val pts = payoutPointsInput.toLongOrNull() ?: 100L
+            showPayoutDialog = false
+            onRequestPayout(pts, payoutTitleInput, selectedMethod, payoutHandleInput)
+          },
+        ) {
+          Text("Submit Request")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showPayoutDialog = false }) { Text("Cancel") }
+      },
+    )
+  }
 }
 
 @Composable
-private fun PipelineStepNode(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    bg: Color,
-    ink: Color,
-    modifier: Modifier = Modifier
+private fun RewardTierProgressGauge(
+  availablePoints: Long,
+  reducedMotion: Boolean,
 ) {
+  val tiers = remember {
+    listOf(
+      RewardTierSpec("Grocery Voucher", 100L),
+      RewardTierSpec("Partner Credit", 250L),
+      RewardTierSpec("Supermarket Bonus", 500L),
+      RewardTierSpec("Gold Ledger Tier", 1000L),
+    )
+  }
+  val nextTier = tiers.firstOrNull { availablePoints < it.thresholdPts } ?: tiers.last()
+  val prevThreshold = tiers.lastOrNull { availablePoints >= it.thresholdPts }?.thresholdPts ?: 0L
+  val rawProgress = if (availablePoints >= nextTier.thresholdPts) {
+    1f
+  } else {
+    val span = (nextTier.thresholdPts - prevThreshold).coerceAtLeast(1L)
+    ((availablePoints - prevThreshold).toFloat() / span.toFloat()).coerceIn(0f, 1f)
+  }
+
+  val animatedProgress by animateFloatAsState(
+    targetValue = rawProgress,
+    animationSpec = tween(
+      durationMillis = if (reducedMotion) 0 else 750,
+      easing = FastOutSlowInEasing,
+    ),
+    label = "tierGaugeProgress",
+  )
+
+  val remaining = (nextTier.thresholdPts - availablePoints).coerceAtLeast(0L)
+  val percentLabel = "${(rawProgress * 100f).toInt()}%"
+
+  Card(
+    shape = RoundedCornerShape(22.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+  ) {
     Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(18.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Surface(
-            color = bg,
-            shape = CircleShape,
-            modifier = Modifier.size(38.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = ink, modifier = Modifier.size(18.dp))
-            }
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column {
+          Text("NEXT REWARD THRESHOLD", style = MaterialTheme.typography.labelSmall, color = EmeraldTrust)
+          Text(nextTier.title, style = MaterialTheme.typography.titleLarge)
         }
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = label,
+        Surface(color = CobaltSoftTint, shape = RoundedCornerShape(8.dp)) {
+          Text(
+            text = "${nextTier.thresholdPts} PTS Goal",
             style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-    }
-}
-
-@Composable
-private fun WalletBentoTile(
-    label: String,
-    points: Long,
-    bgColor: Color,
-    inkColor: Color,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        color = bgColor,
-        shape = RoundedCornerShape(18.dp),
-        modifier = modifier
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = inkColor.copy(alpha = 0.8f)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "$points",
-                fontFamily = JetBrainsMonoFontFamily,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleLarge,
-                color = inkColor
-            )
-            Text(
-                text = "PTS",
-                fontFamily = JetBrainsMonoFontFamily,
-                style = MaterialTheme.typography.labelSmall,
-                color = inkColor.copy(alpha = 0.7f)
-            )
+            color = CobaltInfo,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+          )
         }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+      ) {
+        Box(
+          modifier = Modifier.size(128.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          val trackColor = MaterialTheme.colorScheme.surfaceVariant
+          Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokePx = 14.dp.toPx()
+            val inset = strokePx / 2f
+            val arcSize = Size(size.width - strokePx, size.height - strokePx)
+            val startAngle = 135f
+            val totalSweep = 270f
+
+            // Background arc
+            drawArc(
+              color = trackColor,
+              startAngle = startAngle,
+              sweepAngle = totalSweep,
+              useCenter = false,
+              topLeft = Offset(inset, inset),
+              size = arcSize,
+              style = Stroke(width = strokePx, cap = StrokeCap.Round),
+            )
+
+            // Active progress arc
+            drawArc(
+              brush = Brush.sweepGradient(listOf(EmeraldTrust, ElectricLime, EmeraldTrust)),
+              startAngle = startAngle,
+              sweepAngle = totalSweep * animatedProgress.coerceAtLeast(0.02f),
+              useCenter = false,
+              topLeft = Offset(inset, inset),
+              size = arcSize,
+              style = Stroke(width = strokePx, cap = StrokeCap.Round),
+            )
+          }
+
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(percentLabel, style = MaterialTheme.typography.headlineMedium, color = EmeraldTrust)
+            Text("${availablePoints}p", style = MaterialTheme.typography.labelSmall)
+          }
+        }
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Text(
+            text = if (remaining == 0L) "Threshold unlocked! Ready to redeem." else "$remaining PTS away from ${nextTier.title}",
+            style = MaterialTheme.typography.titleMedium,
+          )
+          Text(
+            text = "Milestones: 100 • 250 • 500 • 1000 PTS",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            tiers.forEach { tier ->
+              val reached = availablePoints >= tier.thresholdPts
+              Surface(
+                color = if (reached) EmeraldSoftTint else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(6.dp),
+              ) {
+                Text(
+                  text = "${tier.thresholdPts}",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = if (reached) EmeraldTrust else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                )
+              }
+            }
+          }
+        }
+      }
     }
+  }
 }
 
 @Composable
-private fun ReceiptStatusChip(status: ReceiptReviewStatus) {
-    val (bg, fg) = when (status) {
-        ReceiptReviewStatus.APPROVED -> Mint100 to Emerald800
-        ReceiptReviewStatus.PENDING -> AmberContainer to AmberWarning
-        ReceiptReviewStatus.REJECTED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-    }
-    Surface(color = bg, shape = MaterialTheme.shapes.small) {
+private fun TransactionRowCard(tx: RewardTransaction, onClick: () -> Unit) {
+  val status = TransactionStatus.fromString(tx.status)
+  val isCredit = tx.transactionType == "RECEIPT_REWARD" || tx.transactionType == "CAMPAIGN_BONUS"
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick),
+    shape = RoundedCornerShape(16.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+  ) {
+    Row(
+      modifier = Modifier.padding(14.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(tx.sourceActivity, style = MaterialTheme.typography.titleMedium)
         Text(
-            text = status.name,
-            style = MaterialTheme.typography.labelMedium,
-            color = fg,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+          "${status.name} • ${tx.auditReference} • ${formatTimestamp(tx.createdAt)}",
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+      }
+      Text(
+        text = "${if (isCredit) "+" else "-"}${tx.amount} PTS",
+        style = MaterialTheme.typography.titleMedium,
+        color = if (isCredit) EmeraldTrust else CrimsonAlert,
+      )
     }
+  }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReceiptSubmissionScreen(
-    defaultCurrency: String,
-    activeCampaigns: List<Campaign>,
-    preselectedCampaignId: String?,
-    feedbackMessage: String?,
-    onClearFeedback: () -> Unit,
-    onSubmitReceipt: (store: String, date: String, currency: String, total: String, ref: String, campaignId: String?) -> Unit,
-    onBack: () -> Unit
+  uiState: MainUiState,
+  preselectedCampaignId: String?,
+  onBack: () -> Unit,
+  onSubmitReceipt: (
+    storeName: String,
+    transactionDate: String,
+    currencyCode: String,
+    totalAmount: Double,
+    receiptReference: String,
+    campaignId: String?,
+    onSuccess: () -> Unit,
+  ) -> Unit,
 ) {
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    var storeName by remember { mutableStateOf("") }
-    var transactionDate by remember { mutableStateOf("2026-11-22") }
-    var currencyCode by remember { mutableStateOf(defaultCurrency) }
-    var totalAmount by remember { mutableStateOf("") }
-    var receiptRef by remember { mutableStateOf("") }
-    var selectedCampaignId by remember { mutableStateOf(preselectedCampaignId) }
+  val market = MarketConfig.findByCountry(uiState.preferences.countryCode)
+  val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri -> selectedImageUri = uri }
+  var storeName by remember { mutableStateOf("") }
+  var transactionDate by remember { mutableStateOf(todayStr) }
+  var totalAmountText by remember { mutableStateOf("") }
+  var receiptReference by remember { mutableStateOf("") }
+  var selectedCampaignId by remember { mutableStateOf(preselectedCampaignId) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Submit Receipt") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
+  LazyColumn(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background),
+    contentPadding = PaddingValues(16.dp),
+    verticalArrangement = Arrangement.spacedBy(14.dp),
+  ) {
+    item {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) {
+          Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
         }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Surface(
-                color = AmberContainer,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Uploading a receipt does NOT automatically credit rewards. Every receipt enters a human review queue and is checked for duplicate reference hashes.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AmberWarning,
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
-
-            if (feedbackMessage != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth().clickable { onClearFeedback() }
-                ) {
-                    Text(
-                        text = feedbackMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-            }
-
-            OutlinedButton(
-                onClick = {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("receipt_pick_photo_button")
-            ) {
-                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (selectedImageUri == null) "Attach Receipt Photo (Photo Picker)" else "Change Receipt Photo")
-            }
-
-            if (selectedImageUri != null) {
-                AsyncImage(
-                    model = selectedImageUri,
-                    contentDescription = "Selected receipt image",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                )
-            }
-
-            OutlinedTextField(
-                value = storeName,
-                onValueChange = { storeName = it },
-                label = { Text("Store Name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("receipt_store_input")
-            )
-            OutlinedTextField(
-                value = transactionDate,
-                onValueChange = { transactionDate = it },
-                label = { Text("Transaction Date (YYYY-MM-DD)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("receipt_date_input")
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = currencyCode,
-                    onValueChange = { currencyCode = it.uppercase().take(3) },
-                    label = { Text("Currency (ISO)") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).testTag("receipt_currency_input")
-                )
-                OutlinedTextField(
-                    value = totalAmount,
-                    onValueChange = { totalAmount = it },
-                    label = { Text("Total Amount") },
-                    singleLine = true,
-                    modifier = Modifier.weight(2f).testTag("receipt_total_input")
-                )
-            }
-            OutlinedTextField(
-                value = receiptRef,
-                onValueChange = { receiptRef = it },
-                label = { Text("Receipt / Invoice Reference #") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("receipt_reference_input")
-            )
-
-            if (activeCampaigns.isNotEmpty()) {
-                Text("Optional Campaign Tag", style = MaterialTheme.typography.titleMedium)
-                activeCampaigns.forEach { camp ->
-                    val selected = selectedCampaignId == camp.id
-                    Surface(
-                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(
-                            1.dp,
-                            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                        ),
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedCampaignId = if (selected) null else camp.id }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("${camp.title} (+${camp.rewardPoints} PTS)", style = MaterialTheme.typography.bodyMedium)
-                            if (selected) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Button(
-                onClick = {
-                    onSubmitReceipt(storeName, transactionDate, currencyCode, totalAmount, receiptRef, selectedCampaignId)
-                },
-                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("receipt_submit_button")
-            ) {
-                Text("Submit for Verification")
-            }
-        }
+        Text("Submit Receipt (1–3 min)", style = MaterialTheme.typography.titleLarge)
+      }
     }
+
+    item {
+      Surface(
+        color = EmeraldSoftTint,
+        shape = RoundedCornerShape(14.dp),
+      ) {
+        Row(
+          modifier = Modifier.padding(12.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Icon(Icons.Rounded.Shield, contentDescription = null, tint = EmeraldTrust)
+          Text(
+            "Every receipt generates a SHA-256 fingerprint from Store + Date + Total + Reference to prevent duplicate submissions.",
+            style = MaterialTheme.typography.bodySmall,
+            color = DeepObsidian,
+          )
+        }
+      }
+    }
+
+    item {
+      Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+      ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          OutlinedTextField(
+            value = storeName,
+            onValueChange = { storeName = it },
+            label = { Text("Store Name *") },
+            placeholder = { Text("e.g., FreshMart Downtown") },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          OutlinedTextField(
+            value = transactionDate,
+            onValueChange = { transactionDate = it },
+            label = { Text("Transaction Date (YYYY-MM-DD) *") },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          OutlinedTextField(
+            value = totalAmountText,
+            onValueChange = { totalAmountText = it },
+            label = { Text("Receipt Total (${market.currencyCode}) *") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+          )
+          OutlinedTextField(
+            value = receiptReference,
+            onValueChange = { receiptReference = it },
+            label = { Text("Receipt / Invoice Reference *") },
+            placeholder = { Text("e.g., INV-88421") },
+            modifier = Modifier.fillMaxWidth(),
+          )
+
+          if (uiState.campaigns.isNotEmpty()) {
+            Text("Optional Partner Campaign:", style = MaterialTheme.typography.labelLarge)
+            uiState.campaigns.forEach { camp ->
+              val selected = selectedCampaignId == camp.id
+              Surface(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clickable { selectedCampaignId = if (selected) null else camp.id },
+                color = if (selected) EmeraldSoftTint else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(
+                  1.dp,
+                  if (selected) EmeraldTrust else MaterialTheme.colorScheme.outline,
+                ),
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text(camp.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                  Text("+${camp.rewardPoints} PTS", style = MaterialTheme.typography.labelMedium, color = EmeraldTrust)
+                }
+              }
+            }
+          }
+
+          Button(
+            onClick = {
+              onSubmitReceipt(
+                storeName,
+                transactionDate,
+                market.currencyCode,
+                totalAmountText.toDoubleOrNull() ?: 0.0,
+                receiptReference,
+                selectedCampaignId,
+                onBack,
+              )
+            },
+            enabled = uiState.firebaseUser != null,
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+          ) {
+            Text(if (uiState.firebaseUser == null) "Sign In Required" else "Submit for Review")
+          }
+        }
+      }
+    }
+  }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionDetailScreen(
-    transaction: RewardTransaction?,
-    isAdmin: Boolean,
-    onReverseTransaction: (RewardTransaction, String) -> Unit,
-    onBack: () -> Unit
+  txId: String,
+  uiState: MainUiState,
+  onBack: () -> Unit,
 ) {
-    var reversalReason by remember { mutableStateOf("") }
+  val tx = uiState.transactions.firstOrNull { it.id == txId }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Transaction Ledger Detail") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        if (transaction == null) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(innerPadding).padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(Icons.Default.HourglassTop, contentDescription = null)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Transaction not found.")
-            }
-            return@Scaffold
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(transaction.sourceActivity, style = MaterialTheme.typography.headlineMedium)
-                    Text(
-                        text = "${transaction.amount} ${transaction.unitCode} • ${transaction.status}",
-                        fontFamily = JetBrainsMonoFontFamily,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    HorizontalDivider()
-                    DetailRow("Transaction ID", transaction.id)
-                    DetailRow("User ID", transaction.userId)
-                    DetailRow("Type", transaction.transactionType)
-                    DetailRow("Status", transaction.status)
-                    DetailRow("Campaign ID", transaction.campaignId ?: "None")
-                    DetailRow("Idempotency Key", transaction.idempotencyKey)
-                    DetailRow("Audit Reference", transaction.auditReference)
-                    DetailRow("Related Tx ID", transaction.relatedTransactionId ?: "None")
-                    DetailRow("Created At", formatTimestamp(transaction.createdAt))
-                    if (!transaction.notes.isNullOrBlank()) {
-                        DetailRow("Notes", transaction.notes)
-                    }
-                }
-            }
-
-            if (isAdmin && TransactionStatus.safeValueOf(transaction.status) == TransactionStatus.CREDITED) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Admin Ledger Reversal", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Reversals append a new REVERSAL transaction referencing this ID. Historical records are never overwritten.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        OutlinedTextField(
-                            value = reversalReason,
-                            onValueChange = { reversalReason = it },
-                            label = { Text("Audit reason for reversal") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Button(
-                            onClick = { onReverseTransaction(transaction, reversalReason) },
-                            enabled = reversalReason.isNotBlank()
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Post Ledger Reversal")
-                        }
-                    }
-                }
-            }
-        }
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background)
+      .padding(16.dp),
+    verticalArrangement = Arrangement.spacedBy(14.dp),
+  ) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      IconButton(onClick = onBack) {
+        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+      }
+      Text("Ledger Audit Detail", style = MaterialTheme.typography.titleLarge)
     }
+
+    if (tx == null) {
+      Text("Transaction not found in your wallet ledger.", style = MaterialTheme.typography.bodyMedium)
+    } else {
+      Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+      ) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(tx.sourceActivity, style = MaterialTheme.typography.headlineMedium)
+          Text("${tx.amount} ${tx.unitCode}", style = MaterialTheme.typography.displayMedium, color = EmeraldTrust)
+          LedgerLine("Type", tx.transactionType)
+          LedgerLine("Status", tx.status)
+          LedgerLine("Audit Ref", tx.auditReference)
+          LedgerLine("Idempotency Key", tx.idempotencyKey)
+          LedgerLine("Recorded", formatTimestamp(tx.createdAt))
+          tx.notes?.takeIf { it.isNotBlank() }?.let { LedgerLine("Notes", it) }
+        }
+      }
+    }
+  }
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontFamily = JetBrainsMonoFontFamily, style = MaterialTheme.typography.bodySmall)
-    }
+private fun LedgerLine(label: String, value: String) {
+  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(value, style = MaterialTheme.typography.labelMedium)
+  }
 }

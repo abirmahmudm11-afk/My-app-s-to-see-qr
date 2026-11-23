@@ -308,6 +308,35 @@
         "requestedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "reason", "status", "requestedAt"]
+    },
+    "PayoutRequest": {
+      "title": "PayoutRequest",
+      "description": "User reward payout or voucher redemption request reviewed by administrators.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "rewardTitle": { "type": "string" },
+        "pointsAmount": { "type": "integer" },
+        "payoutMethod": { "type": "string", "enum": ["GIFT_VOUCHER", "PAYPAL_SANDBOX", "BANK_SANDBOX"] },
+        "destinationHandle": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "PAID", "REJECTED"] },
+        "adminNotes": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "userDisplayName",
+        "rewardTitle",
+        "pointsAmount",
+        "payoutMethod",
+        "destinationHandle",
+        "status",
+        "requestedAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -358,6 +387,10 @@
     "/deletion_requests/{requestId}": {
       "schema": { "$ref": "#/entities/DeletionRequest" },
       "description": "User account deletion requests."
+    },
+    "/payout_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/PayoutRequest" },
+      "description": "User payout and voucher redemption requests reviewed by admins."
     }
   }
 }

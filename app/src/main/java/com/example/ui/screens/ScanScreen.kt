@@ -1,18 +1,23 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.util.Log
+import android.net.Uri
+import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -20,11 +25,12 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,25 +39,28 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.FlashOff
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.AddCircleOutline
+import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FlashOff
+import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -67,30 +76,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.R
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.ScanContext
 import com.example.domain.SupportedBarcodeFormat
-import com.example.ui.components.VerificationBadge
-import com.example.ui.theme.Emerald400
-import com.example.ui.theme.JetBrainsMonoFontFamily
-import com.example.ui.viewmodel.ScannerLookupState
+import com.example.ui.components.VerificationLabel
+import com.example.ui.theme.DeepObsidian
+import com.example.ui.theme.ElectricLime
+import com.example.ui.theme.EmeraldSoftTint
+import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.ObsidianOnLime
+import com.example.ui.viewmodel.ScannerUiState
 import com.example.ui.viewmodel.ScannerViewModel
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -99,624 +107,828 @@ import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
 
-private fun mapMlKitFormat(mlKitFormat: Int): SupportedBarcodeFormat = when (mlKitFormat) {
-    Barcode.FORMAT_EAN_13 -> SupportedBarcodeFormat.EAN_13
-    Barcode.FORMAT_EAN_8 -> SupportedBarcodeFormat.EAN_8
-    Barcode.FORMAT_UPC_A -> SupportedBarcodeFormat.UPC_A
-    Barcode.FORMAT_UPC_E -> SupportedBarcodeFormat.UPC_E
-    Barcode.FORMAT_CODE_128 -> SupportedBarcodeFormat.CODE_128
-    Barcode.FORMAT_CODE_39 -> SupportedBarcodeFormat.CODE_39
-    Barcode.FORMAT_CODE_93 -> SupportedBarcodeFormat.CODE_93
-    Barcode.FORMAT_QR_CODE -> SupportedBarcodeFormat.QR_CODE
-    Barcode.FORMAT_DATA_MATRIX -> SupportedBarcodeFormat.DATA_MATRIX
-    Barcode.FORMAT_PDF417 -> SupportedBarcodeFormat.PDF417
-    Barcode.FORMAT_AZTEC -> SupportedBarcodeFormat.AZTEC
-    Barcode.FORMAT_ITF -> SupportedBarcodeFormat.ITF
-    Barcode.FORMAT_CODABAR -> SupportedBarcodeFormat.CODABAR
-    else -> SupportedBarcodeFormat.CODE_128
-}
-
-@androidx.annotation.OptIn(ExperimentalGetImage::class)
 @Composable
 fun ScanScreen(
-    viewModel: ScannerViewModel,
-    reducedMotion: Boolean,
-    onOpenProductDetail: (String) -> Unit,
-    onNavigateSearchFallback: () -> Unit,
-    modifier: Modifier = Modifier
+  scannerViewModel: ScannerViewModel,
+  scanContext: ScanContext?,
+  reducedMotion: Boolean,
+  onClearScanContext: () -> Unit,
+  onOpenProductDetail: (String) -> Unit,
+  onOpenRewardsOrPromo: (String?) -> Unit,
+  onShowMessage: (String) -> Unit,
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val haptic = LocalHapticFeedback.current
+  val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
+  val uiState by scannerViewModel.uiState.collectAsStateWithLifecycle()
 
-    val lookupState by viewModel.lookupState.collectAsStateWithLifecycle()
-    val torchEnabled by viewModel.torchEnabled.collectAsStateWithLifecycle()
+  var hasCameraPermission by remember {
+    mutableStateOf(
+      ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+        PackageManager.PERMISSION_GRANTED,
+    )
+  }
+  var torchEnabled by remember { mutableStateOf(false) }
+  var hasFlashUnit by remember { mutableStateOf(false) }
+  var boundCamera by remember { mutableStateOf<Camera?>(null) }
+  var showManualDialog by remember { mutableStateOf(false) }
+  var manualCode by remember { mutableStateOf(scanContext?.barcodeValue ?: "") }
 
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED
+  val permissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission(),
+  ) { granted ->
+    hasCameraPermission = granted
+  }
+
+  val barcodeOptions = remember {
+    BarcodeScannerOptions.Builder()
+      .setBarcodeFormats(
+        Barcode.FORMAT_EAN_13,
+        Barcode.FORMAT_EAN_8,
+        Barcode.FORMAT_UPC_A,
+        Barcode.FORMAT_UPC_E,
+        Barcode.FORMAT_CODE_128,
+        Barcode.FORMAT_CODE_39,
+        Barcode.FORMAT_CODE_93,
+        Barcode.FORMAT_QR_CODE,
+        Barcode.FORMAT_DATA_MATRIX,
+        Barcode.FORMAT_PDF417,
+        Barcode.FORMAT_AZTEC,
+        Barcode.FORMAT_ITF,
+        Barcode.FORMAT_CODABAR,
+      )
+      .build()
+  }
+  val mlKitScanner = remember { BarcodeScanning.getClient(barcodeOptions) }
+  val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+
+  val photoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.GetContent(),
+  ) { uri: Uri? ->
+    if (uri != null) {
+      runCatching {
+        val image = InputImage.fromFilePath(context, uri)
+        mlKitScanner.process(image)
+          .addOnSuccessListener { barcodes ->
+            val first = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
+            if (first != null) {
+              scannerViewModel.processScannedBarcode(
+                rawValue = first.rawValue.orEmpty(),
+                format = SupportedBarcodeFormat.fromMlKitFormat(first.format),
+                fromCamera = false,
+              )
+            } else {
+              onShowMessage("No readable barcode found in the selected photo.")
+            }
+          }
+          .addOnFailureListener {
+            onShowMessage("Could not decode barcode from image.")
+          }
+      }.onFailure {
+        onShowMessage("Unable to open image file.")
+      }
+    }
+  }
+
+  DisposableEffect(Unit) {
+    onDispose {
+      runCatching { mlKitScanner.close() }
+      runCatching { analysisExecutor.shutdown() }
+    }
+  }
+
+  // 15s inactivity timer while actively waiting in live camera state
+  LaunchedEffect(uiState, hasCameraPermission) {
+    if (hasCameraPermission && uiState is ScannerUiState.Idle) {
+      delay(15_000L)
+      scannerViewModel.reportTimeout()
+    }
+  }
+
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(DeepObsidian),
+  ) {
+    // Top Viewfinder Controls + Re-scan Context Banner
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Column {
+          Text(
+            text = "LIVE BARCODE ENGINE",
+            style = MaterialTheme.typography.labelSmall,
+            color = ElectricLime,
+          )
+          Text(
+            text = "13 Formats • < 2s Lookup",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+          )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          if (hasFlashUnit) {
+            IconButton(
+              onClick = {
+                val next = !torchEnabled
+                torchEnabled = next
+                runCatching { boundCamera?.cameraControl?.enableTorch(next) }
+              },
+            ) {
+              Icon(
+                imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
+                contentDescription = "Toggle Flash",
+                tint = if (torchEnabled) ElectricLime else Color.White,
+              )
+            }
+          }
+          IconButton(onClick = { photoPickerLauncher.launch("image/*") }) {
+            Icon(Icons.Rounded.PhotoLibrary, contentDescription = "Scan from photo", tint = Color.White)
+          }
+          IconButton(onClick = { showManualDialog = true }) {
+            Icon(Icons.Rounded.Edit, contentDescription = "Manual GTIN entry", tint = ElectricLime)
+          }
+        }
+      }
+
+      if (scanContext != null) {
+        Surface(
+          color = Color(0xFF192420),
+          shape = RoundedCornerShape(14.dp),
+          border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.5f)),
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "RE-SCAN CONTEXT • ${scanContext.barcodeFormat.ifBlank { "GTIN" }}",
+                style = MaterialTheme.typography.labelSmall,
+                color = ElectricLime,
+              )
+              Text(
+                text = listOfNotNull(
+                  scanContext.productName.takeIf { it.isNotBlank() },
+                  scanContext.brand.takeIf { it.isNotBlank() },
+                  scanContext.barcodeValue,
+                ).joinToString(" • "),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+            IconButton(onClick = onClearScanContext, modifier = Modifier.size(28.dp)) {
+              Icon(Icons.Rounded.Close, contentDescription = "Clear re-scan context", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+          }
+        }
+      }
+    }
+
+    // Main Camera Viewfinder Area
+    Box(
+      modifier = Modifier
+        .weight(1f)
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp)
+        .clip(RoundedCornerShape(24.dp))
+        .background(Color(0xFF121C18)),
+      contentAlignment = Alignment.Center,
+    ) {
+      if (hasCameraPermission) {
+        CameraXBarcodeViewfinder(
+          lifecycleOwner = lifecycleOwner,
+          scanner = mlKitScanner,
+          analysisExecutor = analysisExecutor,
+          paused = uiState !is ScannerUiState.Idle,
+          onCameraBound = { cam ->
+            boundCamera = cam
+            hasFlashUnit = cam.cameraInfo.hasFlashUnit()
+          },
+          onBarcodeDetected = { raw, format ->
+            scannerViewModel.processScannedBarcode(raw, format, fromCamera = true)
+          },
         )
-    }
-    var cameraUnavailableError by remember { mutableStateOf<String?>(null) }
-    var showManualDialog by remember { mutableStateOf(false) }
-    var manualBarcodeInput by remember { mutableStateOf("") }
-    var boundCamera by remember { mutableStateOf<Camera?>(null) }
+      } else {
+        Column(
+          modifier = Modifier.padding(24.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Icon(
+            Icons.Rounded.CameraAlt,
+            contentDescription = null,
+            tint = ElectricLime,
+            modifier = Modifier.size(44.dp),
+          )
+          Text(
+            text = "Camera Access Needed",
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White,
+          )
+          Text(
+            text = "Allow camera permission to scan retail barcodes live, or choose a photo / enter a GTIN manually below.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFFB5C4BD),
+          )
+          Button(
+            onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = ElectricLime,
+              contentColor = ObsidianOnLime,
+            ),
+            shape = RoundedCornerShape(14.dp),
+          ) {
+            Text("Enable Camera")
+          }
+        }
+      }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasCameraPermission = granted
+      // Animated Reticle & Subtle Up-and-Down Scanning Line inside Camera View Area
+      ScanningReticleOverlay(
+        isActive = uiState is ScannerUiState.Idle,
+        reducedMotion = reducedMotion,
+        modifier = Modifier.fillMaxSize(),
+      )
+
+      // Overlay State Cards (LookingUp, Matched, NotFound, Error)
+      when (val state = uiState) {
+        is ScannerUiState.LookingUp -> {
+          Surface(
+            color = DeepObsidian.copy(alpha = 0.92f),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, ElectricLime),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              CircularProgressIndicator(modifier = Modifier.size(20.dp), color = ElectricLime, strokeWidth = 2.dp)
+              Column {
+                Text("Looking up ${state.barcode}", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text("${state.format.label} • Validated GS1 format", style = MaterialTheme.typography.labelSmall, color = ElectricLime)
+              }
+            }
+          }
+        }
+        is ScannerUiState.Matched -> {
+          Card(
+            modifier = Modifier
+              .align(Alignment.BottomCenter)
+              .fillMaxWidth()
+              .padding(14.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          ) {
+            Column(
+              modifier = Modifier.padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                VerificationLabel(statusRaw = state.product.verificationStatus)
+                Text(
+                  text = if (state.fromOfflineCache) "Offline Cache" else state.format.label,
+                  style = MaterialTheme.typography.labelSmall,
+                  color = EmeraldTrust,
+                )
+              }
+              Text(state.product.name, style = MaterialTheme.typography.titleLarge)
+              Text(
+                listOfNotNull(
+                  state.product.brand.takeIf { it.isNotBlank() },
+                  state.barcode,
+                ).joinToString(" • "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                  onClick = { scannerViewModel.resetScanner() },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(Modifier.width(4.dp))
+                  Text("Scan Next")
+                }
+                Button(
+                  onClick = {
+                    val code = state.barcode
+                    scannerViewModel.resetScanner()
+                    onOpenProductDetail(code)
+                  },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Text("Open Details")
+                }
+              }
+            }
+          }
+        }
+        is ScannerUiState.NotFound -> {
+          Card(
+            modifier = Modifier
+              .align(Alignment.BottomCenter)
+              .fillMaxWidth()
+              .padding(14.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          ) {
+            Column(
+              modifier = Modifier.padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Text("Product Not Found in Catalog", style = MaterialTheme.typography.titleMedium)
+              Text(
+                "Barcode ${state.barcode} (${state.format.label}) was not returned by merchant records or Open Food Facts.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                  onClick = { scannerViewModel.resetScanner() },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Text("Retry Scan")
+                }
+                Button(
+                  onClick = {
+                    val code = state.barcode
+                    scannerViewModel.resetScanner()
+                    onOpenProductDetail(code)
+                  },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Icon(Icons.Rounded.AddCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(Modifier.width(4.dp))
+                  Text("Add Product")
+                }
+              }
+            }
+          }
+        }
+        is ScannerUiState.QrUrlDetected -> {
+          Card(
+            modifier = Modifier
+              .align(Alignment.BottomCenter)
+              .fillMaxWidth()
+              .padding(14.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          ) {
+            Column(
+              modifier = Modifier.padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Text("QR Product URL Detected", style = MaterialTheme.typography.titleMedium)
+                Text(state.format.label, style = MaterialTheme.typography.labelSmall, color = EmeraldTrust)
+              }
+              Text(
+                state.url,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                  onClick = { scannerViewModel.resetScanner() },
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Text("Scan Next")
+                }
+                if (!state.embeddedBarcode.isNullOrBlank()) {
+                  Button(
+                    onClick = { scannerViewModel.lookupEmbeddedBarcode(state.embeddedBarcode) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                  ) {
+                    Text("Inspect GTIN")
+                  }
+                }
+                Button(
+                  onClick = {
+                    val target = state.url
+                    scannerViewModel.resetScanner()
+                    runCatching {
+                      context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                    }.onFailure {
+                      onShowMessage("No browser available to open URL.")
+                    }
+                  },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(Modifier.width(4.dp))
+                  Text("Open Link")
+                }
+              }
+            }
+          }
+        }
+        is ScannerUiState.QrPromoDetected -> {
+          Card(
+            modifier = Modifier
+              .align(Alignment.BottomCenter)
+              .fillMaxWidth()
+              .padding(14.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          ) {
+            Column(
+              modifier = Modifier.padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Icon(Icons.Rounded.LocalOffer, contentDescription = null, tint = EmeraldTrust, modifier = Modifier.size(18.dp))
+                  Text("QR Promo Code Detected", style = MaterialTheme.typography.titleMedium)
+                }
+                Text(state.format.label, style = MaterialTheme.typography.labelSmall, color = EmeraldTrust)
+              }
+              Surface(
+                color = EmeraldSoftTint,
+                shape = RoundedCornerShape(10.dp),
+              ) {
+                Text(
+                  text = "Code: ${state.promoCode}",
+                  style = MaterialTheme.typography.titleMedium,
+                  color = DeepObsidian,
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+              }
+              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                  onClick = { scannerViewModel.resetScanner() },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Text("Scan Next")
+                }
+                Button(
+                  onClick = {
+                    val hint = state.campaignHint ?: state.promoCode
+                    scannerViewModel.resetScanner()
+                    onShowMessage("Promo '$hint' applied to receipt claim.")
+                    onOpenRewardsOrPromo(state.campaignHint)
+                  },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Text("Claim Promo")
+                }
+              }
+            }
+          }
+        }
+        is ScannerUiState.Error -> {
+          Card(
+            modifier = Modifier
+              .align(Alignment.BottomCenter)
+              .fillMaxWidth()
+              .padding(14.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          ) {
+            Column(
+              modifier = Modifier.padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Text("Scanner Notice", style = MaterialTheme.typography.titleMedium)
+              Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                  onClick = { showManualDialog = true },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Text("Enter Manually")
+                }
+                Button(
+                  onClick = { scannerViewModel.resetScanner() },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Text("Try Again")
+                }
+              }
+            }
+          }
+        }
+        ScannerUiState.Idle -> Unit
+      }
     }
 
-    val barcodeScanner = remember {
-        val options = BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(
-                Barcode.FORMAT_EAN_13,
-                Barcode.FORMAT_EAN_8,
-                Barcode.FORMAT_UPC_A,
-                Barcode.FORMAT_UPC_E,
-                Barcode.FORMAT_CODE_128,
-                Barcode.FORMAT_CODE_39,
-                Barcode.FORMAT_CODE_93,
-                Barcode.FORMAT_QR_CODE,
-                Barcode.FORMAT_DATA_MATRIX,
-                Barcode.FORMAT_PDF417,
-                Barcode.FORMAT_AZTEC,
-                Barcode.FORMAT_ITF,
-                Barcode.FORMAT_CODABAR
+    // Quick Manual / Photo / Sample Barcode Bar
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        OutlinedButton(
+          onClick = { showManualDialog = true },
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(12.dp),
+          border = BorderStroke(1.dp, Color(0xFF31443D)),
+          contentPadding = PaddingValues(vertical = 10.dp),
+        ) {
+          Icon(Icons.Rounded.Edit, contentDescription = null, tint = ElectricLime, modifier = Modifier.size(16.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Manual GTIN", color = Color.White)
+        }
+        OutlinedButton(
+          onClick = { photoPickerLauncher.launch("image/*") },
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(12.dp),
+          border = BorderStroke(1.dp, Color(0xFF31443D)),
+          contentPadding = PaddingValues(vertical = 10.dp),
+        ) {
+          Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Scan Photo", color = Color.White)
+        }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text("Sample:", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA2B3AA))
+        listOf(
+          Triple("3017620422003", "Nutella", SupportedBarcodeFormat.EAN_13),
+          Triple("https://world.openfoodfacts.org/product/5449000000996", "QR URL", SupportedBarcodeFormat.QR_CODE),
+          Triple("PROMO:BONUS100", "QR Promo", SupportedBarcodeFormat.QR_CODE),
+        ).forEach { (code, label, fmt) ->
+          Surface(
+            modifier = Modifier.clickable {
+              scannerViewModel.processScannedBarcode(code, fmt, fromCamera = false)
+            },
+            color = Color(0xFF192420),
+            shape = RoundedCornerShape(8.dp),
+          ) {
+            Text(
+              text = label,
+              style = MaterialTheme.typography.labelSmall,
+              color = ElectricLime,
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            )
+          }
+        }
+      }
+    }
+  }
+
+  if (showManualDialog) {
+    AlertDialog(
+      onDismissRequest = { showManualDialog = false },
+      title = { Text("Enter Barcode / GTIN") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(
+            "Supports EAN-13, EAN-8, UPC-A, UPC-E (with GS1 Modulo-10 validation), Code 128, or QR.",
+            style = MaterialTheme.typography.bodySmall,
+          )
+          OutlinedTextField(
+            value = manualCode,
+            onValueChange = { manualCode = it },
+            label = { Text("Barcode value") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            modifier = Modifier.fillMaxWidth(),
+          )
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            showManualDialog = false
+            scannerViewModel.processScannedBarcode(
+              rawValue = manualCode,
+              format = SupportedBarcodeFormat.MANUAL,
+              fromCamera = false,
+            )
+          },
+        ) {
+          Text("Lookup")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showManualDialog = false }) { Text("Cancel") }
+      },
+    )
+  }
+}
+
+@OptIn(ExperimentalGetImage::class)
+@Composable
+private fun CameraXBarcodeViewfinder(
+  lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+  scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
+  analysisExecutor: java.util.concurrent.ExecutorService,
+  paused: Boolean,
+  onCameraBound: (Camera) -> Unit,
+  onBarcodeDetected: (String, SupportedBarcodeFormat) -> Unit,
+) {
+  val context = LocalContext.current
+  val previewView = remember {
+    PreviewView(context).apply {
+      scaleType = PreviewView.ScaleType.FILL_CENTER
+      implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+    }
+  }
+  val pausedState = remember { mutableStateOf(paused) }
+  pausedState.value = paused
+
+  DisposableEffect(lifecycleOwner) {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    val mainExecutor = ContextCompat.getMainExecutor(context)
+    var providerRef: ProcessCameraProvider? = null
+
+    cameraProviderFuture.addListener(
+      {
+        runCatching {
+          val cameraProvider = cameraProviderFuture.get()
+          providerRef = cameraProvider
+          val preview = Preview.Builder().build().also {
+            it.surfaceProvider = previewView.surfaceProvider
+          }
+
+          val resolutionSelector = ResolutionSelector.Builder()
+            .setResolutionStrategy(
+              ResolutionStrategy(
+                Size(1280, 720),
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+              ),
             )
             .build()
-        BarcodeScanning.getClient(options)
-    }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            barcodeScanner.close()
+          val imageAnalysis = ImageAnalysis.Builder()
+            .setResolutionSelector(resolutionSelector)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+
+          imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
+            if (pausedState.value) {
+              imageProxy.close()
+              return@setAnalyzer
+            }
+            val mediaImage = imageProxy.image
+            if (mediaImage != null) {
+              val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+              scanner.process(inputImage)
+                .addOnSuccessListener { barcodes ->
+                  val match = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
+                  if (match != null) {
+                    val value = match.rawValue.orEmpty()
+                    val fmt = SupportedBarcodeFormat.fromMlKitFormat(match.format)
+                    mainExecutor.execute { onBarcodeDetected(value, fmt) }
+                  }
+                }
+                .addOnCompleteListener { imageProxy.close() }
+            } else {
+              imageProxy.close()
+            }
+          }
+
+          cameraProvider.unbindAll()
+          val camera = cameraProvider.bindToLifecycle(
+            lifecycleOwner,
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            preview,
+            imageAnalysis,
+          )
+          onCameraBound(camera)
         }
+      },
+      mainExecutor,
+    )
+
+    onDispose {
+      runCatching { providerRef?.unbindAll() }
     }
+  }
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                val inputImage = InputImage.fromFilePath(context, uri)
-                barcodeScanner.process(inputImage)
-                    .addOnSuccessListener { barcodes ->
-                        val first = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
-                        if (first != null && first.rawValue != null) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.onBarcodeDetected(
-                                rawValue = first.rawValue!!,
-                                format = mapMlKitFormat(first.format),
-                                fromCameraFrame = false
-                            )
-                        } else {
-                            viewModel.reportError("No supported barcode detected in selected image.")
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        Log.w("ScanScreen", "Image scan failed", e)
-                        viewModel.reportError("Unable to process selected image for barcodes.")
-                    }
-            } catch (e: Exception) {
-                Log.w("ScanScreen", "Unable to read selected image", e)
-                viewModel.reportError("Unable to open selected image.")
-            }
-        }
-    }
-
-    // Sync torch control with CameraX
-    LaunchedEffect(torchEnabled, boundCamera) {
-        try {
-            boundCamera?.cameraControl?.enableTorch(torchEnabled)
-        } catch (e: Exception) {
-            Log.w("ScanScreen", "Torch toggle failed", e)
-        }
-    }
-
-    // 15-second timeout while actively scanning
-    LaunchedEffect(lookupState, hasCameraPermission, cameraUnavailableError) {
-        if (hasCameraPermission && cameraUnavailableError == null && lookupState is ScannerLookupState.Scanning) {
-            delay(15_000L)
-            viewModel.onTimeoutReached()
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFF0A0F0D))
-    ) {
-        if (hasCameraPermission && cameraUnavailableError == null) {
-            val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-            DisposableEffect(Unit) {
-                onDispose { analysisExecutor.shutdown() }
-            }
-
-            AndroidView(
-                factory = { ctx ->
-                    val previewView = PreviewView(ctx)
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                    cameraProviderFuture.addListener({
-                        try {
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.surfaceProvider = previewView.surfaceProvider
-                            }
-                            val imageAnalysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
-
-                            imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                                val mediaImage = imageProxy.image
-                                if (mediaImage != null && viewModel.lookupState.value is ScannerLookupState.Scanning) {
-                                    val image = InputImage.fromMediaImage(
-                                        mediaImage,
-                                        imageProxy.imageInfo.rotationDegrees
-                                    )
-                                    barcodeScanner.process(image)
-                                        .addOnSuccessListener { barcodes ->
-                                            val candidate = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
-                                            if (candidate?.rawValue != null) {
-                                                val accepted = viewModel.onBarcodeDetected(
-                                                    rawValue = candidate.rawValue!!,
-                                                    format = mapMlKitFormat(candidate.format),
-                                                    fromCameraFrame = true
-                                                )
-                                                if (accepted) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                }
-                                            }
-                                        }
-                                        .addOnCompleteListener {
-                                            imageProxy.close()
-                                        }
-                                } else {
-                                    imageProxy.close()
-                                }
-                            }
-
-                            cameraProvider.unbindAll()
-                            val camera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                imageAnalysis
-                            )
-                            boundCamera = camera
-                        } catch (e: Exception) {
-                            Log.w("ScanScreen", "Camera unavailable", e)
-                            cameraUnavailableError = e.localizedMessage ?: "Camera hardware unavailable on this device."
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
-                    previewView
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-
-            // Scan-area Viewfinder Overlay
-            ScanViewfinderOverlay(
-                isScanning = lookupState is ScannerLookupState.Scanning,
-                reducedMotion = reducedMotion,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            // Permission Denied or Camera Unavailable Fallback
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(28.dp),
-                    shadowElevation = 6.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(22.dp),
-                            color = Color(0xFFFAF9F6),
-                            modifier = Modifier.size(124.dp)
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.img_scan_hero),
-                                contentDescription = "Barcode scanner illustration",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = if (cameraUnavailableError != null) "Camera Unavailable" else "Enable Smart Scanner",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = cameraUnavailableError
-                                ?: "Barcodes are decoded locally on-device with ML Kit across 13 retail & 2D formats.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(18.dp))
-                        if (cameraUnavailableError == null) {
-                            Button(
-                                onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp)
-                                    .testTag("grant_camera_permission_button")
-                            ) {
-                                Text("Enable Live Camera", fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                        FilledTonalButton(
-                            onClick = { showManualDialog = true },
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth().height(50.dp)
-                        ) {
-                            Text("Enter Barcode Manually")
-                        }
-                    }
-                }
-            }
-        }
-
-        // Top Controls Bar (Title + Flashlight)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.62f),
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    Text(
-                        text = "Barcode Scanner",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "13 formats • GS1 check-digit verified",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Emerald400
-                    )
-                }
-            }
-            if (hasCameraPermission && cameraUnavailableError == null) {
-                IconButton(
-                    onClick = { viewModel.toggleTorch() },
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = if (torchEnabled) Emerald400 else Color.Black.copy(alpha = 0.62f),
-                        contentColor = if (torchEnabled) Color.Black else Color.White
-                    ),
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("scanner_torch_button")
-                ) {
-                    Icon(
-                        imageVector = if (torchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                        contentDescription = if (torchEnabled) "Turn off flashlight" else "Turn on flashlight"
-                    )
-                }
-            }
-        }
-
-        // Bottom Controls & Lookup Result Overlay
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            when (val state = lookupState) {
-                is ScannerLookupState.Scanning -> {
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.68f),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Align EAN, UPC, Code 128, QR, Data Matrix, PDF417, Aztec, ITF, or Codabar inside the frame.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-                is ScannerLookupState.ValidatingAndLookingUp -> {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text("Looking up ${state.barcode}...", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "Format: ${state.formatLabel}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-                is ScannerLookupState.Found -> {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                VerificationBadge(statusRaw = state.product.verificationStatus)
-                                Text(
-                                    text = if (state.fromOfflineCache) "Offline Cache" else state.formatLabel,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(state.product.name, style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                text = state.product.brand.ifBlank { "Brand not provided by source" },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "GTIN: ${state.product.barcode}",
-                                fontFamily = JetBrainsMonoFontFamily,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { onOpenProductDetail(state.product.barcode) },
-                                    modifier = Modifier.weight(1f).testTag("open_scanned_product_button")
-                                ) {
-                                    Text("View Product & Offers")
-                                }
-                                OutlinedButton(
-                                    onClick = { viewModel.resetScanner() },
-                                    modifier = Modifier.testTag("scan_again_button")
-                                ) {
-                                    Text("Scan Again")
-                                }
-                            }
-                        }
-                    }
-                }
-                is ScannerLookupState.NotFound -> {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Product Not Found in Feeds", style = MaterialTheme.typography.titleMedium)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Validated ${state.formatLabel} (${state.barcode}), but no verified or Open Food Facts record was found.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { onOpenProductDetail(state.barcode) },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Submit Product Info")
-                                }
-                                OutlinedButton(onClick = { viewModel.resetScanner() }) {
-                                    Text("Retry")
-                                }
-                            }
-                        }
-                    }
-                }
-                is ScannerLookupState.TimedOut -> {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Scan Timed Out", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = "No barcode detected in 15 seconds. Improve lighting, toggle flashlight, or enter the code manually.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { viewModel.resetScanner() },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Retry Scan")
-                                }
-                                OutlinedButton(onClick = { showManualDialog = true }) {
-                                    Text("Manual")
-                                }
-                            }
-                        }
-                    }
-                }
-                is ScannerLookupState.Error -> {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "Barcode Validation Error",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Text(
-                                text = state.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(onClick = { viewModel.resetScanner() }) {
-                                Text("Try Again")
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Action Strip: Image Scan, Manual Entry, Search Fallback
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilledTonalButton(
-                    onClick = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("scan_from_image_button")
-                ) {
-                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Photo", maxLines = 1)
-                }
-                FilledTonalButton(
-                    onClick = { showManualDialog = true },
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("manual_barcode_button")
-                ) {
-                    Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Manual", maxLines = 1)
-                }
-                FilledTonalButton(
-                    onClick = onNavigateSearchFallback,
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("scan_search_fallback_button")
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Search", maxLines = 1)
-                }
-            }
-        }
-    }
-
-    if (showManualDialog) {
-        AlertDialog(
-            onDismissRequest = { showManualDialog = false },
-            title = { Text("Enter Barcode") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Barcodes are validated (including GS1 check digits for EAN-13, EAN-8, UPC-A) before product lookup.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = manualBarcodeInput,
-                        onValueChange = { manualBarcodeInput = it },
-                        label = { Text("Barcode / GTIN (e.g. 3017620422003)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("manual_barcode_input")
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showManualDialog = false
-                        viewModel.lookupManualBarcode(manualBarcodeInput)
-                    },
-                    modifier = Modifier.testTag("manual_barcode_submit")
-                ) {
-                    Text("Verify & Lookup")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showManualDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
+  AndroidView(
+    factory = { previewView },
+    modifier = Modifier.fillMaxSize(),
+  )
 }
 
 @Composable
-private fun ScanViewfinderOverlay(
-    isScanning: Boolean,
-    reducedMotion: Boolean,
-    modifier: Modifier = Modifier
+private fun ScanningReticleOverlay(
+  isActive: Boolean,
+  reducedMotion: Boolean,
+  modifier: Modifier = Modifier,
 ) {
-    val lineProgress = if (isScanning && !reducedMotion) {
-        val transition = rememberInfiniteTransition(label = "scan_beam")
-        transition.animateFloat(
-            initialValue = 0.08f,
-            targetValue = 0.92f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1600),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "beam_y"
-        ).value
-    } else {
-        0.5f
+  val scanProgress = if (isActive && !reducedMotion) {
+    val transition = rememberInfiniteTransition(label = "scanLaser")
+    val anim by transition.animateFloat(
+      initialValue = 0.06f,
+      targetValue = 0.94f,
+      animationSpec = infiniteRepeatable(
+        animation = tween(durationMillis = 1900, easing = LinearEasing),
+        repeatMode = RepeatMode.Reverse,
+      ),
+      label = "laserY",
+    )
+    anim
+  } else {
+    0.5f
+  }
+
+  Canvas(modifier = modifier) {
+    val boxW = size.width * 0.74f
+    val boxH = size.height * 0.42f
+    val left = (size.width - boxW) / 2f
+    val top = (size.height - boxH) / 2f
+    val right = left + boxW
+    val bottom = top + boxH
+    val corner = 24.dp.toPx()
+
+    // Subtle dark scrim outside scan frame
+    drawRect(color = Color.Black.copy(alpha = 0.24f))
+
+    // Reticle frame border
+    drawRect(
+      color = Color.White.copy(alpha = 0.28f),
+      topLeft = Offset(left, top),
+      size = androidx.compose.ui.geometry.Size(boxW, boxH),
+      style = Stroke(width = 1.5.dp.toPx()),
+    )
+
+    // Electric Lime corner brackets
+    val strokeW = 3.5.dp.toPx()
+    // Top-left
+    drawLine(ElectricLime, Offset(left, top), Offset(left + corner, top), strokeW)
+    drawLine(ElectricLime, Offset(left, top), Offset(left, top + corner), strokeW)
+    // Top-right
+    drawLine(ElectricLime, Offset(right - corner, top), Offset(right, top), strokeW)
+    drawLine(ElectricLime, Offset(right, top), Offset(right, top + corner), strokeW)
+    // Bottom-left
+    drawLine(ElectricLime, Offset(left, bottom), Offset(left + corner, bottom), strokeW)
+    drawLine(ElectricLime, Offset(left, bottom - corner), Offset(left, bottom), strokeW)
+    // Bottom-right
+    drawLine(ElectricLime, Offset(right - corner, bottom), Offset(right, bottom), strokeW)
+    drawLine(ElectricLime, Offset(right, bottom - corner), Offset(right, bottom), strokeW)
+
+    // Subtle animated scanning laser line moving up and down inside the camera frame
+    if (isActive) {
+      val lineY = top + (boxH * scanProgress)
+      drawRect(
+        brush = Brush.verticalGradient(
+          colors = listOf(Color.Transparent, ElectricLime.copy(alpha = 0.22f), Color.Transparent),
+          startY = lineY - 14.dp.toPx(),
+          endY = lineY + 14.dp.toPx(),
+        ),
+        topLeft = Offset(left + 6.dp.toPx(), lineY - 14.dp.toPx()),
+        size = androidx.compose.ui.geometry.Size(boxW - 12.dp.toPx(), 28.dp.toPx()),
+      )
+      drawLine(
+        brush = Brush.horizontalGradient(
+          colors = listOf(Color.Transparent, ElectricLime, Color.Transparent),
+          startX = left + 8.dp.toPx(),
+          endX = right - 8.dp.toPx(),
+        ),
+        start = Offset(left + 8.dp.toPx(), lineY),
+        end = Offset(right - 8.dp.toPx(), lineY),
+        strokeWidth = 2.5.dp.toPx(),
+      )
     }
-
-    Canvas(modifier = modifier) {
-        val boxWidth = size.width * 0.76f
-        val boxHeight = (boxWidth * 0.58f).coerceAtMost(size.height * 0.34f)
-        val left = (size.width - boxWidth) / 2f
-        val top = (size.height - boxHeight) / 2.2f
-
-        // Subtle dimmed frame border
-        drawRoundRect(
-            color = Emerald400,
-            topLeft = Offset(left, top),
-            size = Size(boxWidth, boxHeight),
-            cornerRadius = CornerRadius(28f, 28f),
-            style = Stroke(width = 5f)
-        )
-
-        if (isScanning) {
-            val beamY = top + (boxHeight * lineProgress)
-            drawLine(
-                color = Emerald400.copy(alpha = 0.85f),
-                start = Offset(left + 20f, beamY),
-                end = Offset(left + boxWidth - 20f, beamY),
-                strokeWidth = 4f
-            )
-        }
-    }
+  }
 }
