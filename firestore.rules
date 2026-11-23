@@ -1,0 +1,503 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Hardened Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (
+          'email_verified' in request.auth.token &&
+          'email' in request.auth.token &&
+          request.auth.token.email_verified == true &&
+          request.auth.token.email == 'm28044963@gmail.com'
+        )
+      );
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.preferredLanguage is string && data.preferredLanguage.size() >= 2 && data.preferredLanguage.size() <= 10 &&
+             data.countryCode is string && data.countryCode.size() == 2 &&
+             data.currencyCode is string && data.currencyCode.size() == 3 &&
+             data.accountStatus in ['ACTIVE', 'DELETION_REQUESTED', 'SUSPENDED'] &&
+             data.marketingConsent is bool &&
+             data.darkThemeEnabled is bool &&
+             data.reducedMotionEnabled is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidScanRecord(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.barcodeValue is string && data.barcodeValue.size() >= 1 && data.barcodeValue.size() <= 128 &&
+             data.barcodeFormat is string && data.barcodeFormat.size() >= 1 && data.barcodeFormat.size() <= 32 &&
+             data.productName is string && data.productName.size() <= 160 &&
+             data.brand is string && data.brand.size() <= 100 &&
+             data.sourceProvider is string && data.sourceProvider.size() >= 1 && data.sourceProvider.size() <= 80 &&
+             data.verificationStatus in ['VERIFIED_MERCHANT', 'LICENSED_PROVIDER', 'OPEN_FOOD_FACTS', 'USER_SUBMITTED_UNVERIFIED', 'UNKNOWN'] &&
+             data.scanResult in ['MATCHED', 'NOT_FOUND', 'INVALID'] &&
+             data.scannedAt is timestamp && data.scannedAt <= request.time;
+    }
+
+    function isValidRewardWallet(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.unitCode == 'PTS' &&
+             data.availablePoints is int && data.availablePoints >= 0 &&
+             data.pendingPoints is int && data.pendingPoints >= 0 &&
+             data.redeemedPoints is int && data.redeemedPoints >= 0 &&
+             data.reversedPoints is int && data.reversedPoints >= 0 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidRewardTransaction(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.transactionType in ['CAMPAIGN_BONUS', 'RECEIPT_REWARD', 'REDEMPTION', 'REVERSAL'] &&
+             data.amount is int && data.amount > 0 && data.amount <= 1000000 &&
+             data.unitCode == 'PTS' &&
+             data.sourceActivity is string && data.sourceActivity.size() >= 1 && data.sourceActivity.size() <= 120 &&
+             (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128)) &&
+             data.status in ['PENDING', 'APPROVED', 'CREDITED', 'REDEEMED', 'REJECTED', 'EXPIRED', 'REVERSED'] &&
+             data.idempotencyKey is string && data.idempotencyKey.size() >= 4 && data.idempotencyKey.size() <= 128 &&
+             data.auditReference is string && data.auditReference.size() >= 2 && data.auditReference.size() <= 128 &&
+             (!('relatedTransactionId' in data) || (data.relatedTransactionId is string && data.relatedTransactionId.size() <= 128)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 300)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidNotification(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.category in ['REWARD_STATUS', 'CAMPAIGN_ANNOUNCEMENT', 'RECEIPT_REVIEW', 'SECURITY_ALERT', 'ACCOUNT'] &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 500 &&
+             data.read is bool &&
+             (!('referenceId' in data) || (data.referenceId is string && data.referenceId.size() <= 128)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidReceipt(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 100 &&
+             data.transactionDate is string && data.transactionDate.size() >= 4 && data.transactionDate.size() <= 30 &&
+             data.currencyCode is string && data.currencyCode.size() == 3 &&
+             (data.totalAmount is float || data.totalAmount is int) && data.totalAmount > 0 && data.totalAmount <= 1000000 &&
+             data.receiptReference is string && data.receiptReference.size() >= 1 && data.receiptReference.size() <= 100 &&
+             data.receiptReferenceHash is string && data.receiptReferenceHash.size() >= 16 && data.receiptReferenceHash.size() <= 128 &&
+             (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128)) &&
+             data.reviewStatus in ['PENDING', 'APPROVED', 'REJECTED'] &&
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300)) &&
+             (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 128)) &&
+             data.submittedAt is timestamp && data.submittedAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCampaign(data) {
+      return data.partnerId is string && data.partnerId.size() >= 1 && data.partnerId.size() <= 128 &&
+             data.partnerName is string && data.partnerName.size() >= 1 && data.partnerName.size() <= 100 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.terms is string && data.terms.size() >= 1 && data.terms.size() <= 1000 &&
+             data.rewardType == 'SANDBOX_POINTS' &&
+             data.rewardPoints is int && data.rewardPoints > 0 && data.rewardPoints <= 10000 &&
+             data.maxPerUser is int && data.maxPerUser >= 1 && data.maxPerUser <= 50 &&
+             data.budgetLimitPoints is int && data.budgetLimitPoints > 0 && data.budgetLimitPoints <= 10000000 &&
+             data.eligibleCountries is list && data.eligibleCountries.size() >= 1 && data.eligibleCountries.size() <= 30 &&
+             (data.eligibleCountries[0] is string) &&
+             data.eligibleBarcodes is list && data.eligibleBarcodes.size() <= 50 &&
+             (data.eligibleBarcodes.size() == 0 || data.eligibleBarcodes[0] is string) &&
+             data.eligibleCategories is list && data.eligibleCategories.size() <= 20 &&
+             (data.eligibleCategories.size() == 0 || data.eligibleCategories[0] is string) &&
+             data.status in ['DRAFT', 'REVIEW', 'APPROVED', 'ACTIVE', 'PAUSED', 'EXPIRED', 'ARCHIVED'] &&
+             data.startAt is timestamp &&
+             data.endAt is timestamp &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCatalogProduct(data) {
+      return data.barcode is string && data.barcode.size() >= 1 && data.barcode.size() <= 64 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+             data.brand is string && data.brand.size() <= 100 &&
+             data.category is string && data.category.size() <= 80 &&
+             data.description is string && data.description.size() <= 600 &&
+             data.imageUrl is string && data.imageUrl.size() <= 500 &&
+             data.manufacturer is string && data.manufacturer.size() <= 120 &&
+             data.countryOfOrigin is string && data.countryOfOrigin.size() <= 80 &&
+             data.dataProvider is string && data.dataProvider.size() >= 1 && data.dataProvider.size() <= 100 &&
+             data.attributionText is string && data.attributionText.size() >= 1 && data.attributionText.size() <= 240 &&
+             data.verificationStatus in ['VERIFIED_MERCHANT', 'LICENSED_PROVIDER', 'OPEN_FOOD_FACTS', 'USER_SUBMITTED_UNVERIFIED'] &&
+             data.submittedBy is string && data.submittedBy.size() >= 1 && data.submittedBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidProductOffer(data) {
+      return data.barcode is string && data.barcode.size() >= 1 && data.barcode.size() <= 64 &&
+             data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 100 &&
+             (data.price is float || data.price is int) && data.price > 0 && data.price <= 1000000 &&
+             data.currencyCode is string && data.currencyCode.size() == 3 &&
+             data.countryCode is string && data.countryCode.size() == 2 &&
+             data.availabilityStatus in ['IN_STOCK', 'LIMITED', 'OUT_OF_STOCK', 'UNVERIFIED'] &&
+             data.verified is bool &&
+             data.offerUrl is string && data.offerUrl.size() <= 500 &&
+             data.submittedBy is string && data.submittedBy.size() >= 1 && data.submittedBy.size() <= 128 &&
+             data.lastVerifiedAt is timestamp && data.lastVerifiedAt <= request.time;
+    }
+
+    function isValidAdminRole(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.roleName in ['SUPER_ADMIN', 'RECEIPT_REVIEWER', 'CAMPAIGN_MANAGER', 'CATALOG_MANAGER'] &&
+             data.permissions is list && data.permissions.size() <= 20 &&
+             (data.permissions.size() == 0 || data.permissions[0] is string) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidAuditLog(data) {
+      return data.actorId is string && data.actorId.size() >= 1 && data.actorId.size() <= 128 &&
+             data.action is string && data.action.size() >= 1 && data.action.size() <= 80 &&
+             data.entityType is string && data.entityType.size() >= 1 && data.entityType.size() <= 60 &&
+             data.entityId is string && data.entityId.size() >= 1 && data.entityId.size() <= 128 &&
+             data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 300 &&
+             data.timestamp is timestamp && data.timestamp <= request.time;
+    }
+
+    function isValidDeletionRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.reason is string && data.reason.size() <= 300 &&
+             data.status in ['REQUESTED', 'COMPLETED'] &&
+             data.requestedAt is timestamp && data.requestedAt <= request.time;
+    }
+
+    // --- Collection Rules ---
+
+    // 1. User Profiles & User-Scoped Subcollections
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isValidId(userId) &&
+                       isOwner(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().accountStatus == 'ACTIVE' &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'preferredLanguage', 'countryCode', 'currencyCode', 'accountStatus', 'marketingConsent', 'darkThemeEnabled', 'reducedMotionEnabled', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'preferredLanguage', 'countryCode', 'currencyCode', 'accountStatus', 'marketingConsent', 'darkThemeEnabled', 'reducedMotionEnabled', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isValidId(userId) &&
+                       isSignedIn() &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
+                         (
+                           isOwner(userId) &&
+                           incoming().accountStatus in ['ACTIVE', 'DELETION_REQUESTED'] &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'preferredLanguage', 'countryCode', 'currencyCode', 'accountStatus', 'marketingConsent', 'darkThemeEnabled', 'reducedMotionEnabled', 'updatedAt'])
+                         )
+                       );
+
+      allow delete: if false;
+
+      // User Scans
+      match /scans/{scanId} {
+        allow get: if isValidId(userId) && isValidId(scanId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        allow create: if isValidId(userId) &&
+                         isValidId(scanId) &&
+                         isOwner(userId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'barcodeValue', 'barcodeFormat', 'productName', 'brand', 'sourceProvider', 'verificationStatus', 'scanResult', 'scannedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'barcodeValue', 'barcodeFormat', 'productName', 'brand', 'sourceProvider', 'verificationStatus', 'scanResult', 'scannedAt']) &&
+                         isValidScanRecord(incoming());
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(scanId) && isOwner(userId);
+      }
+
+      // User Wallet Summary
+      match /wallet/{walletDocId} {
+        allow get: if isValidId(userId) && walletDocId == 'summary' && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+
+        allow create: if isValidId(userId) &&
+                         walletDocId == 'summary' &&
+                         isValidRewardWallet(incoming()) && (
+                           (
+                             isOwner(userId) &&
+                             incoming().userId == request.auth.uid &&
+                             incoming().availablePoints == 0 &&
+                             incoming().pendingPoints == 0 &&
+                             incoming().redeemedPoints == 0 &&
+                             incoming().reversedPoints == 0 &&
+                             incoming().keys().hasAll(['userId', 'unitCode', 'availablePoints', 'pendingPoints', 'redeemedPoints', 'reversedPoints', 'updatedAt']) &&
+                             incoming().keys().hasOnly(['userId', 'unitCode', 'availablePoints', 'pendingPoints', 'redeemedPoints', 'reversedPoints', 'updatedAt'])
+                           ) ||
+                           (
+                             isAdmin() &&
+                             incoming().userId == userId &&
+                             incoming().keys().hasAll(['userId', 'unitCode', 'availablePoints', 'pendingPoints', 'redeemedPoints', 'reversedPoints', 'updatedAt']) &&
+                             incoming().keys().hasOnly(['userId', 'unitCode', 'availablePoints', 'pendingPoints', 'redeemedPoints', 'reversedPoints', 'updatedAt'])
+                           )
+                         );
+
+        allow update: if isValidId(userId) &&
+                         walletDocId == 'summary' &&
+                         isSignedIn() &&
+                         isValidRewardWallet(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().unitCode == existing().unitCode && (
+                           isAdmin() ||
+                           (
+                             isOwner(userId) &&
+                             incoming().pendingPoints == existing().pendingPoints &&
+                             incoming().reversedPoints == existing().reversedPoints &&
+                             incoming().availablePoints < existing().availablePoints &&
+                             (existing().availablePoints - incoming().availablePoints) == (incoming().redeemedPoints - existing().redeemedPoints) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['availablePoints', 'redeemedPoints', 'updatedAt'])
+                           )
+                         );
+
+        allow delete: if false;
+      }
+
+      // Immutable Reward Ledger Transactions
+      match /transactions/{transactionId} {
+        allow get: if isValidId(userId) && isValidId(transactionId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+
+        allow create: if isValidId(userId) &&
+                         isValidId(transactionId) &&
+                         isSignedIn() &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['userId', 'transactionType', 'amount', 'unitCode', 'sourceActivity', 'status', 'idempotencyKey', 'auditReference', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'transactionType', 'amount', 'unitCode', 'sourceActivity', 'campaignId', 'status', 'idempotencyKey', 'auditReference', 'relatedTransactionId', 'notes', 'createdAt']) &&
+                         isValidRewardTransaction(incoming()) && (
+                           isAdmin() ||
+                           (
+                             isOwner(userId) &&
+                             incoming().transactionType == 'REDEMPTION' &&
+                             incoming().status == 'REDEEMED' &&
+                             getAfter(/databases/$(database)/documents/users/$(userId)/wallet/summary).data.availablePoints ==
+                               get(/databases/$(database)/documents/users/$(userId)/wallet/summary).data.availablePoints - incoming().amount &&
+                             getAfter(/databases/$(database)/documents/users/$(userId)/wallet/summary).data.redeemedPoints ==
+                               get(/databases/$(database)/documents/users/$(userId)/wallet/summary).data.redeemedPoints + incoming().amount
+                           )
+                         );
+
+        allow update, delete: if false;
+      }
+
+      // Notifications Inbox
+      match /notifications/{notificationId} {
+        allow get: if isValidId(userId) && isValidId(notificationId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+
+        allow create: if isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         isSignedIn() &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['userId', 'category', 'title', 'body', 'read', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'category', 'title', 'body', 'read', 'referenceId', 'createdAt']) &&
+                         isValidNotification(incoming()) && (
+                           isAdmin() ||
+                           (isOwner(userId) && incoming().category in ['SECURITY_ALERT', 'ACCOUNT'])
+                         );
+
+        allow update: if isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         isOwner(userId) &&
+                         isValidNotification(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+
+        allow delete: if isValidId(userId) && isValidId(notificationId) && isOwner(userId);
+      }
+    }
+
+    // 2. Receipts Verification Queue
+    match /receipts/{receiptId} {
+      allow get: if isValidId(receiptId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isValidId(receiptId) &&
+                       isSignedIn() &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().reviewStatus == 'PENDING' &&
+                       !('reviewedBy' in incoming()) &&
+                       !('rejectionReason' in incoming()) &&
+                       incoming().keys().hasAll(['userId', 'storeName', 'transactionDate', 'currencyCode', 'totalAmount', 'receiptReference', 'receiptReferenceHash', 'reviewStatus', 'submittedAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'storeName', 'transactionDate', 'currencyCode', 'totalAmount', 'receiptReference', 'receiptReferenceHash', 'campaignId', 'reviewStatus', 'submittedAt', 'updatedAt']) &&
+                       isValidReceipt(incoming());
+
+      allow update: if isValidId(receiptId) &&
+                       isAdmin() &&
+                       isValidReceipt(incoming()) &&
+                       existing().reviewStatus == 'PENDING' &&
+                       incoming().userId == existing().userId &&
+                       incoming().submittedAt == existing().submittedAt &&
+                       incoming().receiptReferenceHash == existing().receiptReferenceHash &&
+                       incoming().reviewStatus in ['APPROVED', 'REJECTED'] &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['reviewStatus', 'rejectionReason', 'reviewedBy', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // 3. Promotional Campaigns
+    match /campaigns/{campaignId} {
+      allow get: if isValidId(campaignId) && isSignedIn() && (existing().status == 'ACTIVE' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'ACTIVE' || isAdmin());
+
+      allow create: if isValidId(campaignId) &&
+                       isAdmin() &&
+                       incoming().keys().hasAll(['partnerId', 'partnerName', 'title', 'terms', 'rewardType', 'rewardPoints', 'maxPerUser', 'budgetLimitPoints', 'eligibleCountries', 'eligibleBarcodes', 'eligibleCategories', 'status', 'startAt', 'endAt', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['partnerId', 'partnerName', 'title', 'terms', 'rewardType', 'rewardPoints', 'maxPerUser', 'budgetLimitPoints', 'eligibleCountries', 'eligibleBarcodes', 'eligibleCategories', 'status', 'startAt', 'endAt', 'createdAt', 'updatedAt']) &&
+                       isValidCampaign(incoming());
+
+      allow update: if isValidId(campaignId) &&
+                       isAdmin() &&
+                       isValidCampaign(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'terms', 'rewardPoints', 'maxPerUser', 'budgetLimitPoints', 'eligibleCountries', 'eligibleBarcodes', 'eligibleCategories', 'status', 'startAt', 'endAt', 'updatedAt']);
+
+      allow delete: if isValidId(campaignId) && isAdmin();
+    }
+
+    // 4. Product Catalog & Price Offers
+    match /products_catalog/{barcode} {
+      allow get: if isValidId(barcode) && isSignedIn() && (
+        existing().verificationStatus in ['VERIFIED_MERCHANT', 'LICENSED_PROVIDER', 'OPEN_FOOD_FACTS'] ||
+        existing().submittedBy == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        existing().verificationStatus in ['VERIFIED_MERCHANT', 'LICENSED_PROVIDER', 'OPEN_FOOD_FACTS'] ||
+        existing().submittedBy == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isValidId(barcode) &&
+                       isSignedIn() &&
+                       incoming().barcode == barcode &&
+                       incoming().keys().hasAll(['barcode', 'name', 'brand', 'category', 'description', 'imageUrl', 'manufacturer', 'countryOfOrigin', 'dataProvider', 'attributionText', 'verificationStatus', 'submittedBy', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['barcode', 'name', 'brand', 'category', 'description', 'imageUrl', 'manufacturer', 'countryOfOrigin', 'dataProvider', 'attributionText', 'verificationStatus', 'submittedBy', 'createdAt', 'updatedAt']) &&
+                       isValidCatalogProduct(incoming()) && (
+                         isAdmin() ||
+                         (incoming().submittedBy == request.auth.uid && incoming().verificationStatus == 'USER_SUBMITTED_UNVERIFIED')
+                       );
+
+      allow update: if isValidId(barcode) &&
+                       isAdmin() &&
+                       isValidCatalogProduct(incoming()) &&
+                       incoming().barcode == existing().barcode &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'brand', 'category', 'description', 'imageUrl', 'manufacturer', 'countryOfOrigin', 'dataProvider', 'attributionText', 'verificationStatus', 'updatedAt']);
+
+      allow delete: if isValidId(barcode) && isAdmin();
+
+      match /offers/{offerId} {
+        allow get: if isValidId(barcode) && isValidId(offerId) && isSignedIn() && (
+          existing().countryCode in ['US', 'GB', 'DE', 'JP', 'SG', 'CA', 'AU', 'GLOBAL']
+        );
+        allow list: if isValidId(barcode) && isSignedIn() && (
+          existing().countryCode in ['US', 'GB', 'DE', 'JP', 'SG', 'CA', 'AU', 'GLOBAL']
+        );
+
+        allow create: if isValidId(barcode) &&
+                         isValidId(offerId) &&
+                         isSignedIn() &&
+                         incoming().barcode == barcode &&
+                         incoming().keys().hasAll(['barcode', 'storeName', 'price', 'currencyCode', 'countryCode', 'availabilityStatus', 'verified', 'offerUrl', 'submittedBy', 'lastVerifiedAt']) &&
+                         incoming().keys().hasOnly(['barcode', 'storeName', 'price', 'currencyCode', 'countryCode', 'availabilityStatus', 'verified', 'offerUrl', 'submittedBy', 'lastVerifiedAt']) &&
+                         isValidProductOffer(incoming()) && (
+                           isAdmin() ||
+                           (incoming().submittedBy == request.auth.uid && incoming().verified == false && incoming().availabilityStatus == 'UNVERIFIED')
+                         );
+
+        allow update: if isValidId(barcode) &&
+                         isValidId(offerId) &&
+                         isAdmin() &&
+                         isValidProductOffer(incoming()) &&
+                         incoming().barcode == existing().barcode &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['storeName', 'price', 'currencyCode', 'countryCode', 'availabilityStatus', 'verified', 'offerUrl', 'lastVerifiedAt']);
+
+        allow delete: if isValidId(barcode) && isValidId(offerId) && isAdmin();
+      }
+    }
+
+    // 5. Admin Roles (RBAC)
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) &&
+                       isAdmin() &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll(['userId', 'roleName', 'permissions', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'roleName', 'permissions', 'createdAt']) &&
+                       isValidAdminRole(incoming());
+      allow update: if isValidId(userId) &&
+                       isAdmin() &&
+                       isValidAdminRole(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['roleName', 'permissions']);
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 6. Audit Logs (Immutable)
+    match /audit_logs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(logId) &&
+                       isAdmin() &&
+                       incoming().actorId == request.auth.uid &&
+                       incoming().keys().hasAll(['actorId', 'action', 'entityType', 'entityId', 'reason', 'timestamp']) &&
+                       incoming().keys().hasOnly(['actorId', 'action', 'entityType', 'entityId', 'reason', 'timestamp']) &&
+                       isValidAuditLog(incoming());
+      allow update, delete: if false;
+    }
+
+    // 7. Deletion Requests
+    match /deletion_requests/{requestId} {
+      allow get: if isValidId(requestId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(requestId) &&
+                       isSignedIn() &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'REQUESTED' &&
+                       incoming().keys().hasAll(['userId', 'reason', 'status', 'requestedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'reason', 'status', 'requestedAt']) &&
+                       isValidDeletionRequest(incoming());
+      allow update: if isValidId(requestId) &&
+                       isAdmin() &&
+                       isValidDeletionRequest(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().requestedAt == existing().requestedAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if false;
+    }
+  }
+}
