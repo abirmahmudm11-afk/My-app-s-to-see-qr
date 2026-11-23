@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Check
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Paid
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -80,6 +80,7 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricLime
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.ObsidianElevated
 import com.example.ui.viewmodel.MainUiState
 
 @Composable
@@ -157,7 +158,7 @@ fun AdminConsoleScreen(
             val selected = selectedTab == idx
             Surface(
               modifier = Modifier.clickable { selectedTab = idx },
-              color = if (selected) ElectricLime else Color(0xFF192420),
+              color = if (selected) ElectricLime else ObsidianElevated,
               shape = RoundedCornerShape(10.dp),
             ) {
               Text(
@@ -203,7 +204,7 @@ fun AdminConsoleScreen(
             }
             item {
               Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                AdminKpiTile("Pending Receipts", "${uiState.pendingReceipts.size}", Icons.Rounded.ReceiptLong, EmeraldSoftTint, EmeraldTrust, Modifier.weight(1f)) {
+                AdminKpiTile("Pending Receipts", "${uiState.pendingReceipts.size}", Icons.AutoMirrored.Rounded.ReceiptLong, EmeraldSoftTint, EmeraldTrust, Modifier.weight(1f)) {
                   selectedTab = 3
                 }
                 AdminKpiTile("Active Campaigns", "${uiState.allCampaigns.count { it.status == "ACTIVE" }}", Icons.Rounded.Paid, CobaltSoftTint, CobaltInfo, Modifier.weight(1f)) {

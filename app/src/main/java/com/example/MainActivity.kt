@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -97,6 +98,10 @@ private fun Scan2MoneyRoot(container: AppContainer) {
   val snackbarHostState = remember { SnackbarHostState() }
   var forceAuthModal by remember { mutableStateOf(false) }
 
+  LaunchedEffect(Unit) {
+    mainViewModel.attemptAutoSignIn(activityContext)
+  }
+
   LaunchedEffect(uiState.feedbackMessage) {
     val msg = uiState.feedbackMessage
     if (!msg.isNullOrBlank()) {
@@ -132,9 +137,6 @@ private fun Scan2MoneyRoot(container: AppContainer) {
             AuthScreen(
               isSigningIn = uiState.isSigningIn,
               onGoogleSignIn = { mainViewModel.signInWithGoogle(activityContext) },
-              onEmailSignIn = { email, pwd -> mainViewModel.signInWithEmail(email, pwd) },
-              onEmailSignUp = { name, email, pwd -> mainViewModel.signUpWithEmail(name, email, pwd) },
-              onSendPasswordReset = { email -> mainViewModel.sendPasswordReset(email) },
               onContinueGuest = {
                 forceAuthModal = false
                 mainViewModel.enterGuestMode()
@@ -145,67 +147,68 @@ private fun Scan2MoneyRoot(container: AppContainer) {
       }
 
       else -> {
-        val navController = rememberNavController()
-        val navBackStackEntry by navController.currentBackStackEntryAsState()
-        val currentRoute = navBackStackEntry?.destination?.route
+        key(uiState.firebaseUser?.uid ?: "guest") {
+          val navController = rememberNavController()
+          val navBackStackEntry by navController.currentBackStackEntryAsState()
+          val currentRoute = navBackStackEntry?.destination?.route
 
-        val tabs = remember(uiState.adminRole) {
-          buildList {
-            add(BottomTab(Routes.HOME, "Home", Icons.Rounded.Home))
-            add(BottomTab(Routes.DISCOVER, "Discover", Icons.Rounded.Search))
-            add(BottomTab(Routes.SCAN, "Scan", Icons.Rounded.QrCodeScanner))
-            add(BottomTab(Routes.REWARDS, "Rewards", Icons.Rounded.AccountBalanceWallet))
-            if (uiState.adminRole != null) {
-              add(BottomTab(Routes.ADMIN_CONSOLE, "Admin", Icons.Rounded.AdminPanelSettings))
-            } else {
-              add(BottomTab(Routes.PROFILE, "Profile", Icons.Rounded.Person))
-            }
-          }
-        }
-        val showBottomBar = currentRoute in tabs.map { it.route } || currentRoute == Routes.PROFILE
-
-        val navigateTopLevel: (String) -> Unit = { route ->
-          navController.navigate(route) {
-            popUpTo(navController.graph.findStartDestination().id) {
-              saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
-          }
-        }
-
-        Scaffold(
-          snackbarHost = { SnackbarHost(snackbarHostState) },
-          bottomBar = {
-            if (showBottomBar) {
-              NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                tabs.forEach { tab ->
-                  val selected = currentRoute == tab.route
-                  NavigationBarItem(
-                    selected = selected,
-                    onClick = { navigateTopLevel(tab.route) },
-                    icon = { Icon(tab.icon, contentDescription = tab.label) },
-                    label = { Text(tab.label) },
-                    colors = NavigationBarItemDefaults.colors(
-                      selectedIconColor = ObsidianOnLime,
-                      selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                      indicatorColor = ElectricLime,
-                      unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                      unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                  )
-                }
+          val tabs = remember(uiState.adminRole) {
+            buildList {
+              add(BottomTab(Routes.HOME, "Home", Icons.Rounded.Home))
+              add(BottomTab(Routes.DISCOVER, "Discover", Icons.Rounded.Search))
+              add(BottomTab(Routes.SCAN, "Scan", Icons.Rounded.QrCodeScanner))
+              add(BottomTab(Routes.REWARDS, "Rewards", Icons.Rounded.AccountBalanceWallet))
+              if (uiState.adminRole != null) {
+                add(BottomTab(Routes.ADMIN_CONSOLE, "Admin", Icons.Rounded.AdminPanelSettings))
+              } else {
+                add(BottomTab(Routes.PROFILE, "Profile", Icons.Rounded.Person))
               }
             }
-          },
-        ) { innerPadding ->
-          NavHost(
-            navController = navController,
-            startDestination = Routes.HOME,
-            modifier = Modifier
-              .fillMaxSize()
-              .padding(innerPadding),
-          ) {
+          }
+          val showBottomBar = currentRoute in tabs.map { it.route } || currentRoute == Routes.PROFILE
+
+          val navigateTopLevel: (String) -> Unit = { route ->
+            navController.navigate(route) {
+              popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+              }
+              launchSingleTop = true
+              restoreState = true
+            }
+          }
+
+          Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            bottomBar = {
+              if (showBottomBar) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                  tabs.forEach { tab ->
+                    val selected = currentRoute == tab.route
+                    NavigationBarItem(
+                      selected = selected,
+                      onClick = { navigateTopLevel(tab.route) },
+                      icon = { Icon(tab.icon, contentDescription = tab.label) },
+                      label = { Text(tab.label) },
+                      colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = ObsidianOnLime,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = ElectricLime,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                      ),
+                    )
+                  }
+                }
+              }
+            },
+          ) { innerPadding ->
+            NavHost(
+              navController = navController,
+              startDestination = Routes.HOME,
+              modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            ) {
             composable(Routes.HOME) {
               HomeScreen(
                 uiState = uiState,
@@ -241,6 +244,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                 reducedMotion = uiState.preferences.reducedMotionEnabled,
                 onClearScanContext = { mainViewModel.clearScanContext() },
                 onOpenProductDetail = { barcode -> navController.navigate(Routes.productDetail(barcode)) },
+                onOpenHistory = { navController.navigate(Routes.SCAN_HISTORY) },
                 onOpenRewardsOrPromo = { campHint ->
                   if (!campHint.isNullOrBlank()) {
                     navController.navigate(Routes.receiptSubmit(campHint))
@@ -278,8 +282,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                 onToggleDarkTheme = { mainViewModel.setDarkTheme(it) },
                 onToggleReducedMotion = { mainViewModel.setReducedMotion(it) },
                 onSignIn = { forceAuthModal = true },
-                onResendVerification = { mainViewModel.resendVerificationEmail() },
-                onSignOut = { mainViewModel.signOut() },
+                onSignOut = { mainViewModel.signOut(activityContext) },
               )
             }
 
@@ -297,6 +300,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                   navController.navigate(Routes.offerDetail(code, offerId))
                 },
                 onOpenReceiptSubmit = { campId -> navController.navigate(Routes.receiptSubmit(campId)) },
+                onSignInRequested = { forceAuthModal = true },
                 onShowMessage = { msg -> mainViewModel.showFeedback(msg) },
               )
             }
@@ -334,6 +338,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                 uiState = uiState,
                 preselectedCampaignId = campId,
                 onBack = { navController.popBackStack() },
+                onSignInRequested = { forceAuthModal = true },
                 onSubmitReceipt = { store, date, currency, total, ref, cId, onDone ->
                   mainViewModel.submitReceipt(store, date, currency, total, ref, cId, onDone)
                 },
@@ -361,6 +366,9 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                   mainViewModel.setScanContext(scanContext)
                   navigateTopLevel(Routes.SCAN)
                 },
+                onDeleteEntry = { localId -> mainViewModel.deleteHistoryEntry(localId) },
+                onClearAll = { mainViewModel.clearScanHistory() },
+                onOpenScan = { navigateTopLevel(Routes.SCAN) },
               )
             }
 
@@ -418,6 +426,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
               )
             }
           }
+        }
         }
       }
     }

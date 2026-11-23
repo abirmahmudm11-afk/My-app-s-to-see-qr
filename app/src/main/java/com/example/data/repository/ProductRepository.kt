@@ -9,8 +9,10 @@ import com.example.data.model.VerificationStatus
 import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.remote.OpenFoodFactsProductDto
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -20,7 +22,14 @@ import kotlinx.coroutines.tasks.await
 sealed interface ProductLookupOutcome {
   data class Found(val product: CatalogProduct, val fromOfflineCache: Boolean) : ProductLookupOutcome
   data class NotFound(val barcode: String) : ProductLookupOutcome
+  data class NetworkError(val barcode: String, val message: String) : ProductLookupOutcome
 }
+
+data class CatalogSearchResult(
+  val products: List<CatalogProduct>,
+  val fromOfflineCache: Boolean = false,
+  val errorMessage: String? = null,
+)
 
 class ProductRepository(
   private val db: FirebaseFirestore,
@@ -48,12 +57,16 @@ class ProductRepository(
       }
     }
 
+    var remoteFailureMessage: String? = null
     val remoteProduct = try {
       val response = api.getProductByBarcode(clean)
       if (response.status == 1 && response.product != null) {
         mapOffDto(clean, response.product)
       } else null
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      remoteFailureMessage = e.message ?: "Unable to reach Open Food Facts catalog."
       null
     }
 
@@ -72,35 +85,66 @@ class ProductRepository(
       return ProductLookupOutcome.Found(firestoreDoc, fromOfflineCache = false)
     }
 
+    if (remoteFailureMessage != null) {
+      return ProductLookupOutcome.NetworkError(clean, remoteFailureMessage)
+    }
+
     return ProductLookupOutcome.NotFound(clean)
   }
 
-  suspend fun searchCatalog(query: String): List<CatalogProduct> {
+  suspend fun searchCatalog(query: String): CatalogSearchResult {
     val clean = query.trim()
-    if (clean.isEmpty()) return emptyList()
+    if (clean.isEmpty()) return CatalogSearchResult(emptyList())
 
     if (clean.matches(Regex("^\\d{8,14}$"))) {
-      val direct = lookupByBarcode(clean)
-      if (direct is ProductLookupOutcome.Found) {
-        return listOf(direct.product)
+      when (val direct = lookupByBarcode(clean)) {
+        is ProductLookupOutcome.Found -> return CatalogSearchResult(
+          products = listOf(direct.product),
+          fromOfflineCache = direct.fromOfflineCache,
+        )
+        is ProductLookupOutcome.NetworkError -> return CatalogSearchResult(
+          products = emptyList(),
+          errorMessage = direct.message,
+        )
+        is ProductLookupOutcome.NotFound -> Unit
       }
     }
 
+    var remoteError: String? = null
     val remoteList = try {
-      api.searchProducts(clean).products.mapNotNull { dto ->
+      val v2 = api.searchProductsV2(clean).products.mapNotNull { dto ->
         val code = dto.code?.trim().orEmpty()
         if (code.isEmpty()) null else mapOffDto(code, dto)
       }
-    } catch (_: Exception) {
+      if (v2.isNotEmpty()) {
+        v2
+      } else {
+        api.searchProducts(clean).products.mapNotNull { dto ->
+          val code = dto.code?.trim().orEmpty()
+          if (code.isEmpty()) null else mapOffDto(code, dto)
+        }
+      }
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      remoteError = e.message ?: "Catalog search request failed."
       emptyList()
     }
 
     if (remoteList.isNotEmpty()) {
       cachedProductDao.upsertAll(remoteList.map { CachedProductEntity.fromCatalogProduct(it) })
-      return remoteList
+      return CatalogSearchResult(products = remoteList)
     }
 
-    return cachedProductDao.search(clean).map { it.toCatalogProduct() }
+    val cachedMatches = cachedProductDao.search(clean).map { it.toCatalogProduct() }
+    if (cachedMatches.isNotEmpty()) {
+      return CatalogSearchResult(products = cachedMatches, fromOfflineCache = true)
+    }
+
+    return CatalogSearchResult(
+      products = emptyList(),
+      errorMessage = remoteError,
+    )
   }
 
   fun observeOffersForProduct(barcode: String, countryCode: String): Flow<List<ProductOffer>> = callbackFlow {
@@ -127,7 +171,7 @@ class ProductRepository(
           return@addSnapshotListener
         }
         val items = snap?.documents?.mapNotNull { doc ->
-          doc.toObject(ProductOffer::class.java)?.copy(id = doc.id)
+          doc.toObject(ProductOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
         }?.sortedBy { it.price } ?: emptyList()
         trySend(items)
       }
@@ -180,6 +224,8 @@ class ProductRepository(
       )
       cachedProductDao.upsertAll(listOf(CachedProductEntity.fromCatalogProduct(created)))
       return created
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
     }
@@ -216,6 +262,8 @@ class ProductRepository(
     try {
       db.collection("products_catalog").document(cleanBarcode)
         .collection("offers").document().set(payload).await()
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
     }
@@ -226,11 +274,11 @@ class ProductRepository(
     val path = "products_catalog/$barcode"
     return try {
       val snap = db.collection("products_catalog").document(barcode).get().await()
-      if (!snap.exists()) null else snap.toObject(CatalogProduct::class.java)?.copy(id = snap.id)
-    } catch (e: Exception) {
-      val msg = e.message?.lowercase().orEmpty()
-      if (msg.contains("permission") || msg.contains("insufficient")) null
-      else FirestoreErrorHandler.handleFirestoreError(e, OperationType.GET, path, auth)
+      if (!snap.exists()) null else snap.toObject(CatalogProduct::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = snap.id)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (_: Exception) {
+      null
     }
   }
 

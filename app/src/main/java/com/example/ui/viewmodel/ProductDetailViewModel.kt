@@ -19,6 +19,7 @@ data class ProductDetailUiState(
   val isLoading: Boolean = true,
   val product: CatalogProduct? = null,
   val fromOfflineCache: Boolean = false,
+  val networkError: String? = null,
   val offers: List<ProductOffer> = emptyList(),
   val feedback: String? = null,
 )
@@ -39,10 +40,18 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
             isLoading = false,
             product = outcome.product,
             fromOfflineCache = outcome.fromOfflineCache,
+            networkError = null,
+          )
+        }
+        is ProductLookupOutcome.NetworkError -> {
+          _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            product = null,
+            networkError = outcome.message,
           )
         }
         else -> {
-          _uiState.value = _uiState.value.copy(isLoading = false, product = null)
+          _uiState.value = _uiState.value.copy(isLoading = false, product = null, networkError = null)
         }
       }
     }
@@ -70,6 +79,7 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
       }.onSuccess { created ->
         _uiState.value = _uiState.value.copy(
           product = created,
+          networkError = null,
           feedback = "Community entry added (marked Unverified until reviewed).",
         )
       }.onFailure { err ->

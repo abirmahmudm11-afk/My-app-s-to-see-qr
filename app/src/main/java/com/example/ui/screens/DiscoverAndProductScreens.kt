@@ -25,11 +25,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.QrCode2
-import androidx.compose.material.icons.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
@@ -65,6 +67,7 @@ import com.example.data.model.OfferAvailability
 import com.example.data.model.ProductOffer
 import com.example.domain.CampaignEligibilityEngine
 import com.example.domain.MarketConfig
+import com.example.ui.components.GuestModeBanner
 import com.example.ui.components.ProductSummaryCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.VerificationLabel
@@ -149,6 +152,33 @@ fun DiscoverScreen(
       }
     }
 
+    if (uiState.searchError != null && query.isNotBlank()) {
+      item {
+        Card(
+          shape = RoundedCornerShape(16.dp),
+          colors = CardDefaults.cardColors(containerColor = AmberSoftTint),
+          border = BorderStroke(1.dp, AmberNotice.copy(alpha = 0.45f)),
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Icon(Icons.Rounded.CloudOff, contentDescription = null, tint = AmberNotice)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Text("Catalog Search Notice", style = MaterialTheme.typography.titleSmall, color = AmberNotice)
+              Text(uiState.searchError, style = MaterialTheme.typography.bodySmall)
+            }
+            TextButton(onClick = { onSearch(query) }) {
+              Text("Retry")
+            }
+          }
+        }
+      }
+    }
+
     if (uiState.isSearching) {
       item {
         Row(
@@ -212,11 +242,13 @@ fun ProductDetailScreen(
   onBack: () -> Unit,
   onOpenOfferDetail: (String, String) -> Unit,
   onOpenReceiptSubmit: (String?) -> Unit,
+  onSignInRequested: () -> Unit,
   onShowMessage: (String) -> Unit,
 ) {
   val context = LocalContext.current
   val detailState by productDetailViewModel.uiState.collectAsStateWithLifecycle()
   val market = MarketConfig.findByCountry(mainUiState.preferences.countryCode)
+  val isSignedIn = mainUiState.firebaseUser != null
 
   var showAddOfferDialog by remember { mutableStateOf(false) }
   var storeInput by remember { mutableStateOf("") }
@@ -296,6 +328,41 @@ fun ProductDetailScreen(
         }
       }
     } else if (product == null) {
+      if (detailState.networkError != null) {
+        item {
+          Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = AmberSoftTint),
+            border = BorderStroke(1.dp, AmberNotice.copy(alpha = 0.45f)),
+          ) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.CloudOff, contentDescription = null, tint = AmberNotice)
+                Text("Network Lookup Unreachable", style = MaterialTheme.typography.titleMedium, color = AmberNotice)
+              }
+              Text(detailState.networkError.orEmpty(), style = MaterialTheme.typography.bodySmall)
+              OutlinedButton(
+                onClick = { productDetailViewModel.load(barcode, market.countryCode) },
+                shape = RoundedCornerShape(12.dp),
+              ) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Retry Lookup")
+              }
+            }
+          }
+        }
+      }
+      if (!isSignedIn) {
+        item {
+          GuestModeBanner(onSignInClick = onSignInRequested)
+        }
+      }
       item {
         Card(
           shape = RoundedCornerShape(20.dp),
@@ -338,18 +405,22 @@ fun ProductDetailScreen(
             )
             Button(
               onClick = {
-                productDetailViewModel.submitUnverifiedProduct(
-                  barcode = barcode,
-                  name = newName,
-                  brand = newBrand,
-                  category = newCategory,
-                  description = newDescription,
-                )
+                if (!isSignedIn) {
+                  onSignInRequested()
+                } else {
+                  productDetailViewModel.submitUnverifiedProduct(
+                    barcode = barcode,
+                    name = newName,
+                    brand = newBrand,
+                    category = newCategory,
+                    description = newDescription,
+                  )
+                }
               },
               modifier = Modifier.fillMaxWidth(),
               shape = RoundedCornerShape(14.dp),
             ) {
-              Text("Save Community Product (Unverified)")
+              Text(if (isSignedIn) "Save Community Product (Unverified)" else "Sign In to Contribute Product")
             }
           }
         }
@@ -446,13 +517,15 @@ fun ProductDetailScreen(
                 Text("Share Item")
               }
               Button(
-                onClick = { onOpenReceiptSubmit(null) },
+                onClick = {
+                  if (isSignedIn) onOpenReceiptSubmit(null) else onSignInRequested()
+                },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp),
               ) {
-                Icon(Icons.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Log Receipt")
+                Text(if (isSignedIn) "Log Receipt" else "Sign In")
               }
             }
           }
@@ -490,8 +563,10 @@ fun ProductDetailScreen(
                 )
               }
               if (eligibility.eligible) {
-                TextButton(onClick = { onOpenReceiptSubmit(campaign.id) }) {
-                  Text("Claim +${campaign.rewardPoints}")
+                TextButton(
+                  onClick = { if (isSignedIn) onOpenReceiptSubmit(campaign.id) else onSignInRequested() },
+                ) {
+                  Text(if (isSignedIn) "Claim +${campaign.rewardPoints}" else "Sign In")
                 }
               }
             }
@@ -504,7 +579,9 @@ fun ProductDetailScreen(
         SectionHeader(
           title = "Regional Offers (${market.countryCode})",
           actionLabel = "+ Report Price",
-          onAction = { showAddOfferDialog = true },
+          onAction = {
+            if (isSignedIn) showAddOfferDialog = true else onSignInRequested()
+          },
         )
       }
 
@@ -523,10 +600,15 @@ fun ProductDetailScreen(
                 "No store prices reported for ${market.countryName} yet.",
                 style = MaterialTheme.typography.bodyMedium,
               )
-              OutlinedButton(onClick = { showAddOfferDialog = true }, shape = RoundedCornerShape(12.dp)) {
+              OutlinedButton(
+                onClick = {
+                  if (isSignedIn) showAddOfferDialog = true else onSignInRequested()
+                },
+                shape = RoundedCornerShape(12.dp),
+              ) {
                 Icon(Icons.Rounded.AddCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Report Unverified Store Price")
+                Text(if (isSignedIn) "Report Unverified Store Price" else "Sign In to Report Price")
               }
             }
           }

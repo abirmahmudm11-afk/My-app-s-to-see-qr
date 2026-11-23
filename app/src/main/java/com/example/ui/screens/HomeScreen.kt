@@ -20,12 +20,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.QrCodeScanner
-import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,6 +62,7 @@ import com.example.data.model.ScanRecord
 import com.example.domain.MarketConfig
 import com.example.ui.components.GuestModeBanner
 import com.example.ui.components.ProductSummaryCard
+import com.example.ui.components.QuestMissionsSectionCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.VerificationLabel
 import com.example.ui.components.formatTimestamp
@@ -67,10 +70,12 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricLime
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.ObsidianDivider
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMutedText
 import com.example.ui.theme.ObsidianOnLime
 import com.example.ui.theme.SwatchMint
 import com.example.ui.theme.SwatchOrchid
-import com.example.ui.theme.SwatchPeach
 import com.example.ui.theme.SwatchSky
 import com.example.ui.theme.SwatchSunshine
 import com.example.ui.viewmodel.MainUiState
@@ -100,7 +105,6 @@ fun HomeScreen(
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(16.dp),
   ) {
-    // Top Editorial Header
     item {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -111,7 +115,7 @@ fun HomeScreen(
           Text(
             text = "SCAN2MONEY • ${market.countryCode} (${market.currencyCode})",
             style = MaterialTheme.typography.labelSmall,
-            color = EmeraldTrust,
+            color = MaterialTheme.colorScheme.primary,
           )
           Text(
             text = uiState.firebaseUser?.displayName?.let { "Welcome back, $it" } ?: "Product & Rewards Hub",
@@ -127,7 +131,7 @@ fun HomeScreen(
               Icon(
                 Icons.Rounded.AdminPanelSettings,
                 contentDescription = "Admin Console",
-                tint = EmeraldTrust,
+                tint = MaterialTheme.colorScheme.primary,
               )
             }
           }
@@ -140,7 +144,7 @@ fun HomeScreen(
                     .align(Alignment.TopEnd)
                     .size(8.dp)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(EmeraldTrust),
+                    .background(MaterialTheme.colorScheme.primary),
                 )
               }
             }
@@ -155,7 +159,7 @@ fun HomeScreen(
       }
     }
 
-    // Hero Obsidian Command Card with Concrete Anchors
+    // Hero Deep Obsidian Command Card with Electric Lime Accents
     item {
       Card(
         shape = RoundedCornerShape(24.dp),
@@ -176,7 +180,7 @@ fun HomeScreen(
               Text(
                 text = "SANDBOX LEDGER BALANCE",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFA2B3AA),
+                color = ObsidianMutedText,
               )
               Row(
                 verticalAlignment = Alignment.Bottom,
@@ -196,7 +200,7 @@ fun HomeScreen(
               }
             }
             Surface(
-              color = Color(0xFF192420),
+              color = ObsidianElevated,
               shape = RoundedCornerShape(12.dp),
             ) {
               Column(
@@ -206,12 +210,12 @@ fun HomeScreen(
                 Text(
                   text = "${uiState.wallet.pendingPoints} PTS",
                   style = MaterialTheme.typography.titleMedium,
-                  color = SwatchSunshine,
+                  color = EmeraldSoftTint,
                 )
                 Text(
                   text = "Pending review",
                   style = MaterialTheme.typography.labelSmall,
-                  color = Color(0xFFA2B3AA),
+                  color = ObsidianMutedText,
                 )
               }
             }
@@ -234,7 +238,8 @@ fun HomeScreen(
               onClick = onOpenScan,
               modifier = Modifier
                 .weight(1f)
-                .height(48.dp),
+                .height(48.dp)
+                .testTag("home_scan_item_button"),
               shape = RoundedCornerShape(14.dp),
               colors = ButtonDefaults.buttonColors(
                 containerColor = ElectricLime,
@@ -249,12 +254,13 @@ fun HomeScreen(
               onClick = { onOpenReceiptSubmit(null) },
               modifier = Modifier
                 .weight(1f)
-                .height(48.dp),
+                .height(48.dp)
+                .testTag("home_log_receipt_button"),
               shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, Color(0xFF31443D)),
+              border = BorderStroke(1.dp, ObsidianDivider),
             ) {
               Icon(
-                Icons.Rounded.ReceiptLong,
+                Icons.AutoMirrored.Rounded.ReceiptLong,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(18.dp),
@@ -267,7 +273,7 @@ fun HomeScreen(
       }
     }
 
-    // Bento Capability Dock
+    // Bento Capability Dock in Vibrant Pastel Swatches
     item {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -278,33 +284,43 @@ fun HomeScreen(
           label = "Discover",
           bg = SwatchSky,
           onClick = onOpenDiscover,
-          modifier = Modifier.weight(1f),
+          modifier = Modifier.weight(1f).testTag("home_bento_discover"),
         )
         BentoActionTile(
           icon = Icons.Rounded.AccountBalanceWallet,
           label = "Wallet",
           bg = SwatchMint,
           onClick = onOpenRewards,
-          modifier = Modifier.weight(1f),
+          modifier = Modifier.weight(1f).testTag("home_bento_wallet"),
         )
         BentoActionTile(
-          icon = Icons.Rounded.ReceiptLong,
+          icon = Icons.AutoMirrored.Rounded.ReceiptLong,
           label = "Receipts",
-          bg = SwatchPeach,
+          bg = SwatchSunshine,
           onClick = { onOpenReceiptSubmit(null) },
-          modifier = Modifier.weight(1f),
+          modifier = Modifier.weight(1f).testTag("home_bento_receipts"),
         )
         BentoActionTile(
-          icon = Icons.Rounded.QrCodeScanner,
+          icon = Icons.Rounded.History,
           label = "History",
           bg = SwatchOrchid,
           onClick = onOpenScanHistory,
-          modifier = Modifier.weight(1f),
+          modifier = Modifier.weight(1f).testTag("home_bento_history"),
         )
       }
     }
 
-    // Activity Breakdown Card (Clean Compose bars, no clutter)
+    // Redesigned Quest & Mission Progress Displays with Progress Rings & Motion Indicators
+    item {
+      QuestMissionsSectionCard(
+        missions = uiState.shopperMissions,
+        reducedMotion = uiState.preferences.reducedMotionEnabled,
+        onOpenScan = onOpenScan,
+        onOpenReceiptSubmit = { onOpenReceiptSubmit(null) },
+      )
+    }
+
+    // Activity Breakdown Card
     item {
       ScanActivityAnalyticsCard(
         scans = uiState.recentScans,
@@ -313,7 +329,6 @@ fun HomeScreen(
       )
     }
 
-    // Active Campaigns
     if (uiState.campaigns.isNotEmpty()) {
       item {
         SectionHeader(
@@ -334,7 +349,6 @@ fun HomeScreen(
       }
     }
 
-    // Recent Scans with Re-scan Button & Context Menu
     item {
       SectionHeader(
         title = "Recent Activity & Quick Re-scan",
@@ -358,7 +372,7 @@ fun HomeScreen(
           ) {
             Text("No scans yet", style = MaterialTheme.typography.titleMedium)
             Text(
-              "Scan any retail barcode or test a sample EAN-13 code in the scanner to populate your quick Re-scan shelf.",
+              "Scan any retail barcode or test a sample EAN-13 code in the scanner to populate your quick Re-scan shelf and History.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -393,7 +407,6 @@ fun HomeScreen(
       }
     }
 
-    // Featured Local Cached Catalog
     if (uiState.cachedCatalog.isNotEmpty()) {
       item {
         SectionHeader(
@@ -418,12 +431,12 @@ fun HomeScreen(
 private fun AnchorPillCard(value: String, label: String, modifier: Modifier = Modifier) {
   Surface(
     modifier = modifier,
-    color = Color(0xFF192420),
+    color = ObsidianElevated,
     shape = RoundedCornerShape(12.dp),
   ) {
     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
       Text(value, style = MaterialTheme.typography.titleMedium, color = ElectricLime)
-      Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFA2B3AA), maxLines = 1)
+      Text(label, style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText, maxLines = 1)
     }
   }
 }
@@ -442,6 +455,7 @@ private fun BentoActionTile(
       .clickable(onClick = onClick),
     color = bg,
     shape = RoundedCornerShape(16.dp),
+    border = BorderStroke(1.dp, DeepObsidian.copy(alpha = 0.08f)),
   ) {
     Column(
       modifier = Modifier.padding(vertical = 14.dp, horizontal = 8.dp),
@@ -533,7 +547,7 @@ private fun ScanActivityAnalyticsCard(
                   .fillMaxWidth()
                   .height((44f * fraction).dp)
                   .clip(RoundedCornerShape(6.dp))
-                  .background(if (count > 0) EmeraldTrust else MaterialTheme.colorScheme.surfaceVariant),
+                  .background(if (count > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
               )
               Spacer(Modifier.height(4.dp))
               Text(
@@ -565,7 +579,7 @@ private fun ScanActivityAnalyticsCard(
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 Text(fmt, style = MaterialTheme.typography.labelMedium)
-                Text("$count scans", style = MaterialTheme.typography.labelSmall, color = EmeraldTrust)
+                Text("$count scans", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
               }
             }
           }
@@ -598,7 +612,7 @@ private fun CampaignHighlightCard(
         Text(
           campaign.partnerName.uppercase(),
           style = MaterialTheme.typography.labelSmall,
-          color = EmeraldTrust,
+          color = MaterialTheme.colorScheme.primary,
         )
         Surface(color = EmeraldSoftTint, shape = RoundedCornerShape(8.dp)) {
           Text(

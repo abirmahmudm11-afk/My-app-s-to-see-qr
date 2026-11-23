@@ -24,10 +24,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.QrCodeScanner
-import androidx.compose.material.icons.rounded.ReceiptLong
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,9 +51,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -70,10 +67,13 @@ import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
 import com.example.ui.theme.NightSkyBottom
 import com.example.ui.theme.NightSkyTop
+import com.example.ui.theme.NightTextPrimary
+import com.example.ui.theme.NightTextSecondary
+import com.example.ui.theme.ObsidianDivider
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMutedText
 import com.example.ui.theme.ObsidianOnLime
-import com.example.ui.theme.SwatchMint
-import com.example.ui.theme.SwatchSky
-import com.example.ui.theme.SwatchSunshine
+import com.example.ui.theme.SlateCharcoal
 
 private data class OnboardingChapter(
   val chapterTag: String,
@@ -100,7 +100,7 @@ fun OnboardingScreen(
   val chapters = remember {
     listOf(
       OnboardingChapter(
-        chapterTag = "CHAPTER 01 • DAWN",
+        chapterTag = "CHAPTER 01 • SCAN",
         headline = "Know every shelf item in under 2 seconds.",
         subtitle = "Open the camera, catch any retail barcode, and verify live product provenance with calm clarity.",
         heroAnchorValue = "$0",
@@ -114,7 +114,7 @@ fun OnboardingScreen(
         imageRes = R.drawable.img_scan_hero,
       ),
       OnboardingChapter(
-        chapterTag = "CHAPTER 02 • DAYLIGHT",
+        chapterTag = "CHAPTER 02 • VERIFY",
         headline = "Honest labels. Real price comparisons.",
         subtitle = "We surface verified merchant sources separately from community observations—no invented savings.",
         heroAnchorValue = "< 2s",
@@ -128,7 +128,7 @@ fun OnboardingScreen(
         imageRes = R.drawable.img_discover_basket,
       ),
       OnboardingChapter(
-        chapterTag = "CHAPTER 03 • NIGHT",
+        chapterTag = "CHAPTER 03 • REWARDS",
         headline = "Turn eligible receipts into auditable rewards.",
         subtitle = "Log store receipts in 1–3 minutes with SHA-256 duplicate protection and track every point ledger entry.",
         heroAnchorValue = "1–3 min",
@@ -166,8 +166,8 @@ fun OnboardingScreen(
     label = "skyBottom",
   )
 
-  val primaryTextColor = if (isNightChapter) Color(0xFFF0F5F2) else DeepObsidian
-  val secondaryTextColor = if (isNightChapter) Color(0xFFA8BBB1) else Color(0xFF3E4A44)
+  val primaryTextColor = if (isNightChapter) NightTextPrimary else DeepObsidian
+  val secondaryTextColor = if (isNightChapter) NightTextSecondary else SlateCharcoal
 
   Box(
     modifier = Modifier
@@ -182,7 +182,6 @@ fun OnboardingScreen(
         .padding(20.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      // Top step indicator + Skip
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -206,7 +205,10 @@ fun OnboardingScreen(
             )
           }
         }
-        TextButton(onClick = onContinueGuest) {
+        TextButton(
+          onClick = onContinueGuest,
+          modifier = Modifier.testTag("onboarding_guest_button"),
+        ) {
           Text(
             "Guest Preview",
             color = primaryTextColor,
@@ -233,7 +235,6 @@ fun OnboardingScreen(
         color = secondaryTextColor,
       )
 
-      // Visual Hierarchy Pop-out Payoff Card overlapping the story artwork
       Box(modifier = Modifier.fillMaxWidth()) {
         Image(
           painter = painterResource(id = chapter.imageRes),
@@ -252,11 +253,11 @@ fun OnboardingScreen(
             .shadow(12.dp, RoundedCornerShape(18.dp)),
           shape = RoundedCornerShape(18.dp),
           colors = CardDefaults.cardColors(
-            containerColor = if (isNightChapter) Color(0xFF17221E) else Color.White,
+            containerColor = if (isNightChapter) ObsidianElevated else Color.White,
           ),
           border = BorderStroke(
             1.dp,
-            if (isNightChapter) ElectricLime.copy(alpha = 0.4f) else DeepObsidian.copy(alpha = 0.08f),
+            if (isNightChapter) ElectricLime.copy(alpha = 0.35f) else DeepObsidian.copy(alpha = 0.08f),
           ),
         ) {
           Column(
@@ -278,7 +279,7 @@ fun OnboardingScreen(
               Text(
                 text = chapter.heroAnchorLabel,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isNightChapter) Color(0xFFA8BBB1) else Color(0xFF3E4A44),
+                color = if (isNightChapter) ObsidianMutedText else SlateCharcoal,
                 modifier = Modifier.padding(bottom = 4.dp),
               )
             }
@@ -290,13 +291,12 @@ fun OnboardingScreen(
             Text(
               text = chapter.popoutDetail,
               style = MaterialTheme.typography.labelSmall,
-              color = if (isNightChapter) SwatchMint else EmeraldTrust,
+              color = if (isNightChapter) EmeraldSoftTint else EmeraldTrust,
             )
           }
         }
       }
 
-      // Halo Effect Credential Strip
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -305,10 +305,10 @@ fun OnboardingScreen(
           Surface(
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(14.dp),
-            color = if (isNightChapter) Color(0xFF17221E) else Color.White.copy(alpha = 0.92f),
+            color = if (isNightChapter) ObsidianElevated else Color.White.copy(alpha = 0.94f),
             border = BorderStroke(
               1.dp,
-              if (isNightChapter) Color(0xFF2B3D36) else DeepObsidian.copy(alpha = 0.1f),
+              if (isNightChapter) ObsidianDivider else DeepObsidian.copy(alpha = 0.1f),
             ),
           ) {
             Column(
@@ -341,7 +341,6 @@ fun OnboardingScreen(
         }
       }
 
-      // Market selector on the final chapter
       if (step == 2) {
         Text(
           text = "Select your store currency & region:",
@@ -359,8 +358,8 @@ fun OnboardingScreen(
                 .weight(1f)
                 .clickable { pickedCountry = market.countryCode },
               shape = RoundedCornerShape(12.dp),
-              color = if (selected) ElectricLime else Color(0xFF17221E),
-              border = BorderStroke(1.dp, if (selected) ElectricLime else Color(0xFF2B3D36)),
+              color = if (selected) ElectricLime else ObsidianElevated,
+              border = BorderStroke(1.dp, if (selected) ElectricLime else ObsidianDivider),
             ) {
               Column(
                 modifier = Modifier.padding(10.dp),
@@ -374,7 +373,7 @@ fun OnboardingScreen(
                 Text(
                   market.currencyCode,
                   style = MaterialTheme.typography.labelSmall,
-                  color = if (selected) ObsidianOnLime else Color(0xFFA8BBB1),
+                  color = if (selected) ObsidianOnLime else ObsidianMutedText,
                 )
               }
             }
@@ -391,8 +390,8 @@ fun OnboardingScreen(
                 .weight(1f)
                 .clickable { pickedCountry = market.countryCode },
               shape = RoundedCornerShape(12.dp),
-              color = if (selected) ElectricLime else Color(0xFF17221E),
-              border = BorderStroke(1.dp, if (selected) ElectricLime else Color(0xFF2B3D36)),
+              color = if (selected) ElectricLime else ObsidianElevated,
+              border = BorderStroke(1.dp, if (selected) ElectricLime else ObsidianDivider),
             ) {
               Column(
                 modifier = Modifier.padding(10.dp),
@@ -406,7 +405,7 @@ fun OnboardingScreen(
                 Text(
                   market.currencyCode,
                   style = MaterialTheme.typography.labelSmall,
-                  color = if (selected) ObsidianOnLime else Color(0xFFA8BBB1),
+                  color = if (selected) ObsidianOnLime else ObsidianMutedText,
                 )
               }
             }
@@ -427,7 +426,7 @@ fun OnboardingScreen(
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(
               1.dp,
-              if (isNightChapter) Color(0xFF3E524A) else DeepObsidian.copy(alpha = 0.25f),
+              if (isNightChapter) ObsidianDivider else DeepObsidian.copy(alpha = 0.25f),
             ),
           ) {
             Text("Back", color = primaryTextColor)
@@ -444,7 +443,8 @@ fun OnboardingScreen(
           },
           modifier = Modifier
             .weight(1f)
-            .height(54.dp),
+            .height(54.dp)
+            .testTag("onboarding_continue_button"),
           shape = RoundedCornerShape(16.dp),
           colors = ButtonDefaults.buttonColors(
             containerColor = if (isNightChapter) ElectricLime else DeepObsidian,
@@ -452,7 +452,7 @@ fun OnboardingScreen(
           ),
         ) {
           Text(
-            text = if (step < 2) "Continue Story" else "Start Scanning ($0)",
+            text = if (step < 2) "Continue" else "Get Started ($0)",
             style = MaterialTheme.typography.labelLarge,
           )
           Spacer(Modifier.width(8.dp))
@@ -467,17 +467,8 @@ fun OnboardingScreen(
 fun AuthScreen(
   isSigningIn: Boolean,
   onGoogleSignIn: () -> Unit,
-  onEmailSignIn: (email: String, password: String) -> Unit,
-  onEmailSignUp: (displayName: String, email: String, password: String) -> Unit,
-  onSendPasswordReset: (email: String) -> Unit,
   onContinueGuest: () -> Unit,
 ) {
-  var isSignUpMode by remember { mutableStateOf(false) }
-  var displayName by remember { mutableStateOf("") }
-  var email by remember { mutableStateOf("") }
-  var password by remember { mutableStateOf("") }
-  var showPassword by remember { mutableStateOf(false) }
-
   Column(
     modifier = Modifier
       .fillMaxSize()
@@ -519,22 +510,22 @@ fun AuthScreen(
       colors = CardDefaults.cardColors(containerColor = DeepObsidian),
     ) {
       Column(
-        modifier = Modifier.padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Surface(
           color = ElectricLime,
           shape = RoundedCornerShape(8.dp),
         ) {
           Text(
-            text = "EMAIL AUTH • GOOGLE CREDENTIAL MANAGER",
+            text = "GOOGLE CREDENTIAL MANAGER • CLOUD SYNC",
             style = MaterialTheme.typography.labelSmall,
             color = ObsidianOnLime,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
           )
         }
         Text(
-          text = "$0 to join. Sync every scan & request payouts.",
+          text = "Sign in with Google to sync scan history, log receipts & claim rewards.",
           style = MaterialTheme.typography.headlineMedium,
           color = Color.White,
         )
@@ -555,112 +546,18 @@ fun AuthScreen(
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
       Column(
-        modifier = Modifier.padding(16.dp),
+        modifier = Modifier.padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          listOf(false to "Email Sign In", true to "Create Account").forEach { (signUpTab, label) ->
-            val selected = isSignUpMode == signUpTab
-            Surface(
-              modifier = Modifier
-                .weight(1f)
-                .clickable { isSignUpMode = signUpTab },
-              color = if (selected) DeepObsidian else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(12.dp),
-            ) {
-              Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (selected) ElectricLime else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
-              )
-            }
-          }
-        }
-
-        if (isSignUpMode) {
-          androidx.compose.material3.OutlinedTextField(
-            value = displayName,
-            onValueChange = { displayName = it },
-            label = { Text("Full Name") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
-        }
-
-        androidx.compose.material3.OutlinedTextField(
-          value = email,
-          onValueChange = { email = it },
-          label = { Text("Email Address") },
-          singleLine = true,
-          keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-            keyboardType = androidx.compose.ui.text.input.KeyboardType.Email,
-          ),
-          modifier = Modifier.fillMaxWidth(),
+        Text("What's included in both modes", style = MaterialTheme.typography.titleMedium)
+        AuthModeRow(
+          title = "Google Account (Recommended)",
+          detail = "Cloud Firestore wallet, SHA-256 receipt submission, campaign rewards & cross-device scan sync.",
         )
-
-        androidx.compose.material3.OutlinedTextField(
-          value = password,
-          onValueChange = { password = it },
-          label = { Text("Password (min 6 chars)") },
-          singleLine = true,
-          visualTransformation = if (showPassword) {
-            androidx.compose.ui.text.input.VisualTransformation.None
-          } else {
-            androidx.compose.ui.text.input.PasswordVisualTransformation()
-          },
-          trailingIcon = {
-            TextButton(onClick = { showPassword = !showPassword }) {
-              Text(if (showPassword) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
-            }
-          },
-          modifier = Modifier.fillMaxWidth(),
+        AuthModeRow(
+          title = "Guest Local Scanner Mode",
+          detail = "Instant 13-format barcode & QR scanning, Open Food Facts catalog search, local Room scan history & missions.",
         )
-
-        if (!isSignUpMode) {
-          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = { onSendPasswordReset(email) }) {
-              Text("Forgot Password?", style = MaterialTheme.typography.labelSmall)
-            }
-          }
-        }
-
-        Button(
-          onClick = {
-            if (isSignUpMode) {
-              onEmailSignUp(displayName, email, password)
-            } else {
-              onEmailSignIn(email, password)
-            }
-          },
-          enabled = !isSigningIn,
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(52.dp),
-          shape = RoundedCornerShape(14.dp),
-          colors = ButtonDefaults.buttonColors(
-            containerColor = DeepObsidian,
-            contentColor = Color.White,
-          ),
-        ) {
-          if (isSigningIn) {
-            CircularProgressIndicator(
-              modifier = Modifier.size(18.dp),
-              strokeWidth = 2.dp,
-              color = ElectricLime,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("Authenticating...")
-          } else {
-            Text(
-              text = if (isSignUpMode) "Sign Up with Email" else "Sign In with Email",
-              style = MaterialTheme.typography.labelLarge,
-            )
-          }
-        }
       }
     }
 
@@ -669,16 +566,27 @@ fun AuthScreen(
       enabled = !isSigningIn,
       modifier = Modifier
         .fillMaxWidth()
-        .height(52.dp),
+        .height(54.dp)
+        .testTag("google_sign_in_button"),
       shape = RoundedCornerShape(16.dp),
       colors = ButtonDefaults.buttonColors(
-        containerColor = EmeraldSoftTint,
-        contentColor = DeepObsidian,
+        containerColor = DeepObsidian,
+        contentColor = ElectricLime,
       ),
     ) {
-      Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
-      Spacer(Modifier.width(10.dp))
-      Text("Continue with Google", style = MaterialTheme.typography.labelLarge)
+      if (isSigningIn) {
+        CircularProgressIndicator(
+          modifier = Modifier.size(18.dp),
+          strokeWidth = 2.dp,
+          color = ElectricLime,
+        )
+        Spacer(Modifier.width(10.dp))
+        Text("Connecting Google Account...")
+      } else {
+        Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text("Continue with Google", style = MaterialTheme.typography.labelLarge)
+      }
     }
 
     OutlinedButton(
@@ -686,7 +594,8 @@ fun AuthScreen(
       enabled = !isSigningIn,
       modifier = Modifier
         .fillMaxWidth()
-        .height(48.dp),
+        .height(50.dp)
+        .testTag("continue_guest_button"),
       shape = RoundedCornerShape(16.dp),
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
@@ -698,15 +607,35 @@ fun AuthScreen(
 }
 
 @Composable
+private fun AuthModeRow(title: String, detail: String) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+    verticalAlignment = Alignment.Top,
+  ) {
+    Icon(
+      Icons.Rounded.CheckCircle,
+      contentDescription = null,
+      tint = EmeraldTrust,
+      modifier = Modifier.size(18.dp).padding(top = 2.dp),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+      Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+      Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+  }
+}
+
+@Composable
 private fun AuthAnchorMetric(value: String, label: String, modifier: Modifier = Modifier) {
   Surface(
     modifier = modifier,
     shape = RoundedCornerShape(12.dp),
-    color = Color(0xFF192420),
+    color = ObsidianElevated,
   ) {
     Column(modifier = Modifier.padding(10.dp)) {
       Text(value, style = MaterialTheme.typography.titleLarge, color = ElectricLime)
-      Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB5C4BD))
+      Text(label, style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
     }
   }
 }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="emerald_brand">#059669</color>
-    <color name="ink_black">#0C1210</color>
-    <color name="warm_white">#F3F4EF</color>
+    <color name="emerald_brand">#0E9F6E</color>
+    <color name="deep_obsidian">#0E1412</color>
+    <color name="mint_alabaster">#F8F9F7</color>
 </resources>

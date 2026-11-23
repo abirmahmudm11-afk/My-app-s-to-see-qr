@@ -25,9 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.CardGiftcard
-import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.model.PayoutMethod
@@ -77,8 +78,9 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricLime
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMutedText
 import com.example.ui.theme.ObsidianOnLime
-import com.example.ui.theme.SwatchMint
 import com.example.ui.viewmodel.MainUiState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -111,6 +113,7 @@ fun RewardsScreen(
   var payoutTitleInput by remember { mutableStateOf("Cashout Payout") }
   var payoutHandleInput by remember { mutableStateOf(uiState.firebaseUser?.email ?: "") }
   var selectedMethod by remember { mutableStateOf(PayoutMethod.PAYPAL_SANDBOX) }
+  val isSignedIn = uiState.firebaseUser != null
 
   LazyColumn(
     modifier = Modifier
@@ -125,13 +128,13 @@ fun RewardsScreen(
       SandboxCashbackBanner()
     }
 
-    if (uiState.firebaseUser == null) {
+    if (!isSignedIn) {
       item {
         GuestModeBanner(onSignInClick = onSignInRequested)
       }
     }
 
-    // Visual Radial Progress Gauge toward Next Tier / Reward Threshold
+    // Visual Radial Progress Ring toward Next Tier / Reward Threshold
     item {
       RewardTierProgressGauge(
         availablePoints = uiState.wallet.availablePoints,
@@ -158,51 +161,60 @@ fun RewardsScreen(
           ) {
             Column {
               Text("${uiState.wallet.availablePoints} PTS", style = MaterialTheme.typography.displayMedium, color = ElectricLime)
-              Text("Available balance", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB5C4BD))
+              Text("Available balance", style = MaterialTheme.typography.bodySmall, color = ObsidianMutedText)
             }
             Column(horizontalAlignment = Alignment.End) {
               Text("${uiState.wallet.pendingPoints} PTS", style = MaterialTheme.typography.titleLarge, color = Color.White)
-              Text("Pending review", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB5C4BD))
+              Text("Pending review", style = MaterialTheme.typography.bodySmall, color = ObsidianMutedText)
             }
           }
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Surface(modifier = Modifier.weight(1f), color = Color(0xFF192420), shape = RoundedCornerShape(10.dp)) {
+            Surface(modifier = Modifier.weight(1f), color = ObsidianElevated, shape = RoundedCornerShape(10.dp)) {
               Column(Modifier.padding(10.dp)) {
-                Text("${uiState.wallet.redeemedPoints} PTS", style = MaterialTheme.typography.titleMedium, color = SwatchMint)
-                Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA2B3AA))
+                Text("${uiState.wallet.redeemedPoints} PTS", style = MaterialTheme.typography.titleMedium, color = EmeraldSoftTint)
+                Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
               }
             }
-            Surface(modifier = Modifier.weight(1f), color = Color(0xFF192420), shape = RoundedCornerShape(10.dp)) {
+            Surface(modifier = Modifier.weight(1f), color = ObsidianElevated, shape = RoundedCornerShape(10.dp)) {
               Column(Modifier.padding(10.dp)) {
                 Text("100 PTS", style = MaterialTheme.typography.titleMedium, color = ElectricLime)
-                Text("Payout minimum ($0 fee)", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA2B3AA))
+                Text("Payout minimum ($0 fee)", style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
               }
             }
           }
           Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
               onClick = { onSubmitReceipt(null) },
-              modifier = Modifier.weight(1f),
+              modifier = Modifier
+                .weight(1f)
+                .testTag("rewards_log_receipt_button"),
               shape = RoundedCornerShape(14.dp),
               colors = ButtonDefaults.buttonColors(containerColor = ElectricLime, contentColor = ObsidianOnLime),
             ) {
-              Icon(Icons.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
+              Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
               Spacer(Modifier.width(6.dp))
               Text("Log Receipt")
             }
             OutlinedButton(
-              onClick = { showPayoutDialog = true },
-              enabled = uiState.firebaseUser != null,
-              modifier = Modifier.weight(1f),
+              onClick = {
+                if (isSignedIn) {
+                  showPayoutDialog = true
+                } else {
+                  onSignInRequested()
+                }
+              },
+              modifier = Modifier
+                .weight(1f)
+                .testTag("rewards_request_payout_button"),
               shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.5f)),
+              border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.55f)),
             ) {
               Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = ElectricLime, modifier = Modifier.size(18.dp))
               Spacer(Modifier.width(6.dp))
-              Text("Request Payout", color = ElectricLime)
+              Text(if (isSignedIn) "Request Payout" else "Sign In to Claim", color = ElectricLime)
             }
           }
         }
@@ -212,7 +224,7 @@ fun RewardsScreen(
     // Quick Vouchers
     item { SectionHeader("Redeem Sandbox Vouchers") }
     items(vouchers) { (title, cost, subtitle) ->
-      val canRedeem = uiState.firebaseUser != null && uiState.wallet.availablePoints >= cost
+      val hasBalance = uiState.wallet.availablePoints >= cost
       Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -230,7 +242,7 @@ fun RewardsScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Icon(Icons.Rounded.CardGiftcard, contentDescription = null, tint = EmeraldTrust)
+            Icon(Icons.Rounded.CardGiftcard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Column {
               Text(title, style = MaterialTheme.typography.titleMedium)
               Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -238,11 +250,13 @@ fun RewardsScreen(
           }
           Spacer(Modifier.width(8.dp))
           Button(
-            onClick = { onRedeemVoucher(cost, title) },
-            enabled = canRedeem,
+            onClick = {
+              if (!isSignedIn) onSignInRequested() else onRedeemVoucher(cost, title)
+            },
+            enabled = !isSignedIn || hasBalance,
             shape = RoundedCornerShape(12.dp),
           ) {
-            Text("$cost PTS")
+            Text(if (!isSignedIn) "Sign In" else "$cost PTS")
           }
         }
       }
@@ -477,7 +491,7 @@ private fun RewardTierProgressGauge(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Column {
-          Text("NEXT REWARD THRESHOLD", style = MaterialTheme.typography.labelSmall, color = EmeraldTrust)
+          Text("NEXT REWARD THRESHOLD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
           Text(nextTier.title, style = MaterialTheme.typography.titleLarge)
         }
         Surface(color = CobaltSoftTint, shape = RoundedCornerShape(8.dp)) {
@@ -496,18 +510,18 @@ private fun RewardTierProgressGauge(
         horizontalArrangement = Arrangement.spacedBy(18.dp),
       ) {
         Box(
-          modifier = Modifier.size(128.dp),
+          modifier = Modifier.size(124.dp),
           contentAlignment = Alignment.Center,
         ) {
           val trackColor = MaterialTheme.colorScheme.surfaceVariant
+          val primaryTeal = MaterialTheme.colorScheme.primary
           Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokePx = 14.dp.toPx()
+            val strokePx = 12.dp.toPx()
             val inset = strokePx / 2f
             val arcSize = Size(size.width - strokePx, size.height - strokePx)
             val startAngle = 135f
             val totalSweep = 270f
 
-            // Background arc
             drawArc(
               color = trackColor,
               startAngle = startAngle,
@@ -518,9 +532,8 @@ private fun RewardTierProgressGauge(
               style = Stroke(width = strokePx, cap = StrokeCap.Round),
             )
 
-            // Active progress arc
             drawArc(
-              brush = Brush.sweepGradient(listOf(EmeraldTrust, ElectricLime, EmeraldTrust)),
+              brush = Brush.sweepGradient(listOf(primaryTeal, ElectricLime, primaryTeal)),
               startAngle = startAngle,
               sweepAngle = totalSweep * animatedProgress.coerceAtLeast(0.02f),
               useCenter = false,
@@ -531,7 +544,7 @@ private fun RewardTierProgressGauge(
           }
 
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(percentLabel, style = MaterialTheme.typography.headlineMedium, color = EmeraldTrust)
+            Text(percentLabel, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Text("${availablePoints}p", style = MaterialTheme.typography.labelSmall)
           }
         }
@@ -607,6 +620,7 @@ fun ReceiptSubmissionScreen(
   uiState: MainUiState,
   preselectedCampaignId: String?,
   onBack: () -> Unit,
+  onSignInRequested: () -> Unit,
   onSubmitReceipt: (
     storeName: String,
     transactionDate: String,
@@ -619,6 +633,7 @@ fun ReceiptSubmissionScreen(
 ) {
   val market = MarketConfig.findByCountry(uiState.preferences.countryCode)
   val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
+  val isSignedIn = uiState.firebaseUser != null
 
   var storeName by remember { mutableStateOf("") }
   var transactionDate by remember { mutableStateOf(todayStr) }
@@ -659,6 +674,12 @@ fun ReceiptSubmissionScreen(
             color = DeepObsidian,
           )
         }
+      }
+    }
+
+    if (!isSignedIn) {
+      item {
+        GuestModeBanner(onSignInClick = onSignInRequested)
       }
     }
 
@@ -726,23 +747,27 @@ fun ReceiptSubmissionScreen(
 
           Button(
             onClick = {
-              onSubmitReceipt(
-                storeName,
-                transactionDate,
-                market.currencyCode,
-                totalAmountText.toDoubleOrNull() ?: 0.0,
-                receiptReference,
-                selectedCampaignId,
-                onBack,
-              )
+              if (!isSignedIn) {
+                onSignInRequested()
+              } else {
+                onSubmitReceipt(
+                  storeName,
+                  transactionDate,
+                  market.currencyCode,
+                  totalAmountText.toDoubleOrNull() ?: 0.0,
+                  receiptReference,
+                  selectedCampaignId,
+                  onBack,
+                )
+              }
             },
-            enabled = uiState.firebaseUser != null,
             modifier = Modifier
               .fillMaxWidth()
-              .height(52.dp),
+              .height(52.dp)
+              .testTag("submit_receipt_button"),
             shape = RoundedCornerShape(14.dp),
           ) {
-            Text(if (uiState.firebaseUser == null) "Sign In Required" else "Submit for Review")
+            Text(if (!isSignedIn) "Sign In with Google to Submit" else "Submit for Review")
           }
         }
       }

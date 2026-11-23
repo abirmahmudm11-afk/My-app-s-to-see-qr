@@ -1,17 +1,22 @@
 package com.example
 
+import com.example.data.local.ScanHistoryEntity
 import com.example.data.model.Campaign
 import com.example.data.model.CampaignStatus
 import com.example.data.model.CatalogProduct
 import com.example.data.model.PayoutMethod
 import com.example.data.model.PayoutRequest
 import com.example.data.model.PayoutStatus
+import com.example.data.model.ReceiptSubmission
 import com.example.data.model.RewardTransaction
+import com.example.data.model.RewardWallet
+import com.example.data.model.ScanRecord
 import com.example.data.model.TransactionStatus
 import com.example.domain.BarcodeValidationResult
 import com.example.domain.BarcodeValidator
 import com.example.domain.CampaignEligibilityEngine
 import com.example.domain.MarketConfig
+import com.example.domain.QuestMissionEngine
 import com.example.domain.SupportedBarcodeFormat
 import com.google.firebase.Timestamp
 import org.junit.Assert.assertEquals
@@ -138,5 +143,59 @@ class DomainLogicUnitTest {
     assertEquals(PayoutStatus.PENDING.name, req.status)
     assertEquals(250L, req.pointsAmount)
     assertEquals("PayPal Sandbox", PayoutMethod.fromString(req.payoutMethod).label)
+  }
+
+  @Test
+  fun questMissionsComputeProgressAndCompletion() {
+    val scans = listOf(
+      ScanRecord(barcodeValue = "3017620422003"),
+      ScanRecord(barcodeValue = "5449000000996"),
+      ScanRecord(barcodeValue = "3017620422003"),
+    )
+    val receipts = listOf(ReceiptSubmission(id = "r1"))
+    val wallet = RewardWallet(availablePoints = 120L)
+
+    val missions = QuestMissionEngine.computeMissions(scans, receipts, wallet)
+    assertEquals(4, missions.size)
+
+    val scanCadence = missions.first { it.id == "scan_cadence" }
+    assertTrue(scanCadence.isCompleted)
+    assertEquals(1f, scanCadence.progressFraction, 0.001f)
+
+    val catalogExplorer = missions.first { it.id == "catalog_discovery" }
+    assertFalse(catalogExplorer.isCompleted)
+    assertEquals(2, catalogExplorer.currentStep)
+    assertEquals(0.4f, catalogExplorer.progressFraction, 0.001f)
+
+    val voucherReadiness = missions.first { it.id == "voucher_threshold" }
+    assertTrue(voucherReadiness.isCompleted)
+    assertEquals(100, voucherReadiness.currentStep)
+  }
+
+  @Test
+  fun scanHistoryEntityMapsRichMetadataToScanRecord() {
+    val entity = ScanHistoryEntity(
+      id = 42L,
+      userId = "guest",
+      barcodeValue = "3017620422003",
+      barcodeFormat = "EAN_13",
+      productName = "Nutella Hazelnut Spread",
+      brand = "Ferrero",
+      category = "Spreads",
+      description = "400g jar",
+      imageUrl = "https://example.com/img.jpg",
+      dataProvider = "Open Food Facts",
+      verificationStatus = "UNVERIFIED",
+      scanResult = "MATCHED",
+      scannedAtMs = 1700000000000L,
+    )
+    val record = entity.toScanRecord()
+    assertEquals(42L, record.localHistoryId)
+    assertEquals("local_42", record.id)
+    assertEquals("Nutella Hazelnut Spread", record.productName)
+    assertEquals("Ferrero", record.brand)
+    assertEquals("Spreads", record.category)
+    assertEquals("400g jar", record.description)
+    assertEquals(1700000000000L, record.localTimestampMs)
   }
 }

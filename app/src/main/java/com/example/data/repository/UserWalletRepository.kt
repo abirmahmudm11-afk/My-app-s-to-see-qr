@@ -1,7 +1,5 @@
 package com.example.data.repository
 
-import com.example.data.local.LocalScanDao
-import com.example.data.local.LocalScanEntity
 import com.example.data.model.AppNotification
 import com.example.data.model.PayoutMethod
 import com.example.data.model.PayoutRequest
@@ -14,22 +12,22 @@ import com.example.data.model.TransactionType
 import com.example.data.model.UserProfile
 import com.example.domain.MarketConfig
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
 class UserWalletRepository(
   private val db: FirebaseFirestore,
   private val auth: FirebaseAuth,
-  private val localScanDao: LocalScanDao,
+  private val scanHistoryRepository: ScanHistoryRepository,
 ) {
-  fun observeLocalScans(): Flow<List<ScanRecord>> =
-    localScanDao.observeRecent().map { list -> list.map { it.toScanRecord() } }
+  fun observeLocalScans(): Flow<List<ScanRecord>> = scanHistoryRepository.observeHistory()
 
   suspend fun ensureAccountInitialized(
     userId: String,
@@ -73,6 +71,8 @@ class UserWalletRepository(
           ),
         ).await()
       }
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.WRITE, "users/$uid", auth)
     }
@@ -81,12 +81,15 @@ class UserWalletRepository(
   fun observeUserProfile(userId: String): Flow<UserProfile?> = callbackFlow {
     val reg = db.collection("users").document(userId).addSnapshotListener { snap, error ->
       if (error != null) {
-        if (auth.currentUser?.uid == userId) {
-          close(error)
-        }
+        if (auth.currentUser?.uid == userId) close(error)
         return@addSnapshotListener
       }
-      trySend(if (snap != null && snap.exists()) snap.toObject(UserProfile::class.java)?.copy(id = snap.id) else null)
+      val profile = if (snap != null && snap.exists()) {
+        snap.toObject(UserProfile::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = snap.id)
+      } else {
+        null
+      }
+      trySend(profile)
     }
     awaitClose { reg.remove() }
   }
@@ -99,7 +102,8 @@ class UserWalletRepository(
           return@addSnapshotListener
         }
         val wallet = if (snap != null && snap.exists()) {
-          snap.toObject(RewardWallet::class.java)?.copy(id = snap.id) ?: RewardWallet(userId = userId)
+          snap.toObject(RewardWallet::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = snap.id)
+            ?: RewardWallet(userId = userId)
         } else {
           RewardWallet(userId = userId)
         }
@@ -116,7 +120,7 @@ class UserWalletRepository(
           return@addSnapshotListener
         }
         val list = snap?.documents?.mapNotNull { doc ->
-          doc.toObject(RewardTransaction::class.java)?.copy(id = doc.id)
+          doc.toObject(RewardTransaction::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
         }?.sortedByDescending { it.createdAt?.seconds ?: 0L } ?: emptyList()
         trySend(list)
       }
@@ -131,7 +135,7 @@ class UserWalletRepository(
           return@addSnapshotListener
         }
         val list = snap?.documents?.mapNotNull { doc ->
-          doc.toObject(ScanRecord::class.java)?.copy(id = doc.id)
+          doc.toObject(ScanRecord::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
         }?.sortedByDescending { it.scannedAt?.seconds ?: 0L } ?: emptyList()
         trySend(list)
       }
@@ -146,7 +150,7 @@ class UserWalletRepository(
           return@addSnapshotListener
         }
         val list = snap?.documents?.mapNotNull { doc ->
-          doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+          doc.toObject(AppNotification::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
         }?.sortedByDescending { it.createdAt?.seconds ?: 0L } ?: emptyList()
         trySend(list)
       }
@@ -158,23 +162,27 @@ class UserWalletRepository(
     barcodeFormat: String,
     productName: String,
     brand: String,
+    category: String = "",
+    description: String = "",
+    imageUrl: String = "",
     sourceProvider: String,
     verificationStatus: String,
     scanResult: String,
   ) {
     val uid = auth.currentUser?.uid
-    localScanDao.insert(
-      LocalScanEntity(
-        userId = uid ?: "local",
-        barcodeValue = barcodeValue.take(128),
-        barcodeFormat = barcodeFormat.take(32),
-        productName = productName.take(160),
-        brand = brand.take(100),
-        sourceProvider = sourceProvider.ifEmpty { "None" }.take(80),
-        verificationStatus = verificationStatus,
-        scanResult = scanResult,
-        scannedAtMs = System.currentTimeMillis(),
-      ),
+    scanHistoryRepository.saveScan(
+      userId = uid ?: "local",
+      barcodeValue = barcodeValue,
+      barcodeFormat = barcodeFormat,
+      productName = productName,
+      brand = brand,
+      category = category,
+      description = description,
+      imageUrl = imageUrl,
+      dataProvider = sourceProvider,
+      verificationStatus = verificationStatus,
+      scanResult = scanResult,
+      scannedAtMs = System.currentTimeMillis(),
     )
 
     if (uid != null) {
@@ -193,10 +201,20 @@ class UserWalletRepository(
             "scannedAt" to FieldValue.serverTimestamp(),
           ),
         ).await()
+      } catch (e: CancellationException) {
+        throw e
       } catch (e: Exception) {
         FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
       }
     }
+  }
+
+  suspend fun deleteLocalHistoryEntry(localHistoryId: Long) {
+    scanHistoryRepository.deleteEntry(localHistoryId)
+  }
+
+  suspend fun clearLocalHistory() {
+    scanHistoryRepository.clearHistory()
   }
 
   suspend fun updatePreferences(
@@ -218,6 +236,8 @@ class UserWalletRepository(
 
     try {
       db.collection("users").document(uid).update(updates).await()
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.UPDATE, "users/$uid", auth)
     }
@@ -232,7 +252,7 @@ class UserWalletRepository(
           return@addSnapshotListener
         }
         val list = snap?.documents?.mapNotNull { doc ->
-          doc.toObject(PayoutRequest::class.java)?.copy(id = doc.id)
+          doc.toObject(PayoutRequest::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
         }?.sortedByDescending { it.requestedAt?.seconds ?: 0L } ?: emptyList()
         trySend(list)
       }
@@ -302,6 +322,8 @@ class UserWalletRepository(
         ),
       )
       batch.commit().await()
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.WRITE, path, auth)
     }
@@ -328,6 +350,8 @@ class UserWalletRepository(
     try {
       db.collection("users").document(uid).collection("notifications").document(notificationId)
         .update("read", true).await()
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.UPDATE, path, auth)
     }
@@ -351,6 +375,8 @@ class UserWalletRepository(
           "updatedAt" to FieldValue.serverTimestamp(),
         ),
       ).await()
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, path, auth)
     }

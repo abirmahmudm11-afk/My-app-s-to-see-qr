@@ -23,6 +23,8 @@ import com.example.data.model.ScanRecord
 import com.example.data.model.UserProfile
 import com.example.di.AppContainer
 import com.example.domain.MarketConfig
+import com.example.domain.QuestMissionEngine
+import com.example.domain.ShopperMission
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -48,7 +50,9 @@ data class MainUiState(
   val notifications: List<AppNotification> = emptyList(),
   val campaigns: List<Campaign> = emptyList(),
   val recentScans: List<ScanRecord> = emptyList(),
+  val localScanHistory: List<ScanRecord> = emptyList(),
   val cachedCatalog: List<CatalogProduct> = emptyList(),
+  val shopperMissions: List<ShopperMission> = emptyList(),
   val adminRole: AdminRole? = null,
   val allUsers: List<UserProfile> = emptyList(),
   val allPayoutRequests: List<PayoutRequest> = emptyList(),
@@ -60,6 +64,7 @@ data class MainUiState(
   val auditLogs: List<AuditLog> = emptyList(),
   val searchResults: List<CatalogProduct> = emptyList(),
   val isSearching: Boolean = false,
+  val searchError: String? = null,
   val isSigningIn: Boolean = false,
   val activeScanContext: ScanContext? = null,
   val feedbackMessage: String? = null,
@@ -101,6 +106,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
   private val adminRoleFlow = MutableStateFlow<AdminRole?>(null)
   private val searchResultsFlow = MutableStateFlow<List<CatalogProduct>>(emptyList())
   private val isSearchingFlow = MutableStateFlow(false)
+  private val searchErrorFlow = MutableStateFlow<String?>(null)
   private val isSigningInFlow = MutableStateFlow(false)
   private val activeScanContextFlow = MutableStateFlow<ScanContext?>(null)
   private val feedbackMessageFlow = MutableStateFlow<String?>(null)
@@ -268,26 +274,34 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
     combine(
       searchResultsFlow,
       isSearchingFlow,
+      searchErrorFlow,
       isSigningInFlow,
       activeScanContextFlow,
-      feedbackMessageFlow,
-    ) { results, searching, signingIn, scanCtx, feedback ->
-      arrayOf<Any?>(results, searching, signingIn, scanCtx, feedback)
+    ) { results, searching, searchErr, signingIn, scanCtx ->
+      arrayOf<Any?>(results, searching, searchErr, signingIn, scanCtx)
     },
-  ) { session, uiFlags ->
+    feedbackMessageFlow,
+  ) { session, uiFlags, feedback ->
     val core = session.first
     val sec = session.second
     val admin = session.third
     @Suppress("UNCHECKED_CAST")
     val searchResults = uiFlags[0] as List<CatalogProduct>
     val isSearching = uiFlags[1] as Boolean
-    val isSigningIn = uiFlags[2] as Boolean
-    val scanContext = uiFlags[3] as ScanContext?
-    val feedback = uiFlags[4] as String?
+    val searchError = uiFlags[2] as String?
+    val isSigningIn = uiFlags[3] as Boolean
+    val scanContext = uiFlags[4] as ScanContext?
 
-    val mergedScans = (sec.cloudScans + sec.localScans)
+    // Prefer Room localScans when deduplicating because localScans carry richer product details & delete IDs
+    val mergedScans = (sec.localScans + sec.cloudScans)
       .distinctBy { "${it.barcodeValue}|${it.scannedAt?.seconds ?: (it.localTimestampMs / 1000L)}" }
       .sortedByDescending { it.scannedAt?.seconds ?: (it.localTimestampMs / 1000L) }
+
+    val missions = QuestMissionEngine.computeMissions(
+      scans = mergedScans,
+      receipts = sec.receipts,
+      wallet = core.wallet,
+    )
 
     MainUiState(
       firebaseUser = core.user,
@@ -300,7 +314,9 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
       notifications = sec.notifications,
       campaigns = sec.campaigns,
       recentScans = mergedScans,
+      localScanHistory = sec.localScans,
       cachedCatalog = sec.cachedCatalog,
+      shopperMissions = missions,
       adminRole = admin.role,
       allUsers = admin.allUsers,
       allPayoutRequests = admin.allPayoutRequests,
@@ -312,6 +328,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
       auditLogs = admin.auditLogs,
       searchResults = searchResults,
       isSearching = isSearching,
+      searchError = searchError,
       isSigningIn = isSigningIn,
       activeScanContext = scanContext,
       feedbackMessage = feedback,
@@ -351,6 +368,18 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
     }
   }
 
+  fun attemptAutoSignIn(activityContext: Context) {
+    viewModelScope.launch {
+      val prefs = prefsState.value
+      if (prefs.onboardingCompleted && !prefs.guestMode && container.auth.currentUser == null) {
+        val user = container.credentialAuth.attemptAutoSignIn(activityContext)
+        if (user != null) {
+          handleAuthenticatedUser(user, "Signed in as ${user.displayName ?: user.email ?: "Shopper"}")
+        }
+      }
+    }
+  }
+
   fun signInWithGoogle(activityContext: Context) {
     viewModelScope.launch {
       isSigningInFlow.value = true
@@ -361,51 +390,6 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
       }.onFailure { err ->
         feedbackMessageFlow.value = err.message ?: "Google sign-in cancelled or unavailable."
       }
-    }
-  }
-
-  fun signInWithEmail(email: String, password: String) {
-    viewModelScope.launch {
-      isSigningInFlow.value = true
-      val result = container.credentialAuth.signInWithEmail(email, password)
-      isSigningInFlow.value = false
-      result.onSuccess { user ->
-        handleAuthenticatedUser(user, "Welcome back, ${user.displayName ?: user.email ?: "Shopper"}")
-      }.onFailure { err ->
-        feedbackMessageFlow.value = err.message ?: "Email sign-in failed."
-      }
-    }
-  }
-
-  fun signUpWithEmail(displayName: String, email: String, password: String) {
-    viewModelScope.launch {
-      isSigningInFlow.value = true
-      val result = container.credentialAuth.signUpWithEmail(displayName, email, password)
-      isSigningInFlow.value = false
-      result.onSuccess { user ->
-        handleAuthenticatedUser(
-          user,
-          "Account created! Check ${user.email ?: "your inbox"} to verify your email.",
-        )
-      }.onFailure { err ->
-        feedbackMessageFlow.value = err.message ?: "Could not create account."
-      }
-    }
-  }
-
-  fun sendPasswordReset(email: String) {
-    viewModelScope.launch {
-      container.credentialAuth.sendPasswordReset(email)
-        .onSuccess { feedbackMessageFlow.value = "Password reset link sent to ${email.trim()}." }
-        .onFailure { err -> feedbackMessageFlow.value = err.message ?: "Could not send password reset email." }
-    }
-  }
-
-  fun resendVerificationEmail() {
-    viewModelScope.launch {
-      container.credentialAuth.resendVerificationEmail()
-        .onSuccess { feedbackMessageFlow.value = "Verification email sent. Check your inbox." }
-        .onFailure { err -> feedbackMessageFlow.value = err.message ?: "Failed to send verification email." }
     }
   }
 
@@ -425,11 +409,27 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
     feedbackMessageFlow.value = message
   }
 
-  fun signOut() {
+  fun signOut(context: Context) {
     viewModelScope.launch {
-      container.credentialAuth.signOut()
+      container.credentialAuth.signOut(context)
       container.preferencesDataStore.setGuestMode(false)
       feedbackMessageFlow.value = "Signed out of SCAN2MONEY."
+    }
+  }
+
+  fun deleteHistoryEntry(localHistoryId: Long) {
+    viewModelScope.launch {
+      runCatching { container.userWalletRepository.deleteLocalHistoryEntry(localHistoryId) }
+        .onSuccess { feedbackMessageFlow.value = "Removed entry from Scan History." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Could not delete entry." }
+    }
+  }
+
+  fun clearScanHistory() {
+    viewModelScope.launch {
+      runCatching { container.userWalletRepository.clearLocalHistory() }
+        .onSuccess { feedbackMessageFlow.value = "Cleared local Scan History." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Could not clear history." }
     }
   }
 
@@ -473,12 +473,21 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
   fun searchCatalog(query: String) {
     if (query.trim().isEmpty()) {
       searchResultsFlow.value = emptyList()
+      searchErrorFlow.value = null
       return
     }
     viewModelScope.launch {
       isSearchingFlow.value = true
-      searchResultsFlow.value = runCatching { container.productRepository.searchCatalog(query) }
-        .getOrElse { emptyList() }
+      searchErrorFlow.value = null
+      val res = runCatching { container.productRepository.searchCatalog(query) }
+        .getOrElse { err ->
+          com.example.data.repository.CatalogSearchResult(
+            products = emptyList(),
+            errorMessage = err.message ?: "Catalog search failed.",
+          )
+        }
+      searchResultsFlow.value = res.products
+      searchErrorFlow.value = res.errorMessage
       isSearchingFlow.value = false
     }
   }

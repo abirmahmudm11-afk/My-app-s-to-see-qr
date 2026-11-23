@@ -5,8 +5,10 @@ import com.example.data.model.ReceiptReviewStatus
 import com.example.data.model.ReceiptSubmission
 import com.example.domain.BarcodeValidator
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -30,7 +32,7 @@ class ReceiptAndCampaignRepository(
           return@addSnapshotListener
         }
         val items = snap?.documents?.mapNotNull { doc ->
-          doc.toObject(Campaign::class.java)?.copy(id = doc.id)
+          doc.toObject(Campaign::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
         }?.sortedByDescending { it.rewardPoints } ?: emptyList()
         trySend(items)
       }
@@ -46,7 +48,7 @@ class ReceiptAndCampaignRepository(
           return@addSnapshotListener
         }
         val items = snap?.documents?.mapNotNull { doc ->
-          doc.toObject(ReceiptSubmission::class.java)?.copy(id = doc.id)
+          doc.toObject(ReceiptSubmission::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
         }?.sortedByDescending { it.submittedAt?.seconds ?: 0L } ?: emptyList()
         trySend(items)
       }
@@ -109,6 +111,8 @@ class ReceiptAndCampaignRepository(
         payload["campaignId"] = campaignId.trim().take(128)
       }
       db.collection("receipts").document().set(payload).await()
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: IllegalStateException) {
       throw e
     } catch (e: Exception) {

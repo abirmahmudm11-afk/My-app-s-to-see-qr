@@ -19,6 +19,7 @@ import com.example.data.model.UserProfile
 import com.example.data.model.VerificationStatus
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
@@ -47,7 +48,7 @@ class AdminRepository(
     }
     return try {
       val snap = db.collection("admins").document(user.uid).get().await()
-      if (snap.exists()) snap.toObject(AdminRole::class.java)?.copy(id = snap.id) else null
+      if (snap.exists()) snap.toObject(AdminRole::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = snap.id) else null
     } catch (_: Exception) {
       null
     }
@@ -56,7 +57,7 @@ class AdminRepository(
   fun observeAllUsers(): Flow<List<UserProfile>> = callbackFlow {
     val reg = db.collection("users").addSnapshotListener { snap, error ->
       if (error != null) return@addSnapshotListener
-      val items = snap?.documents?.mapNotNull { it.toObject(UserProfile::class.java)?.copy(id = it.id) }
+      val items = snap?.documents?.mapNotNull { it.toObject(UserProfile::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.createdAt?.seconds ?: 0L } ?: emptyList()
       trySend(items)
     }
@@ -66,7 +67,7 @@ class AdminRepository(
   fun observeAllPayoutRequests(): Flow<List<PayoutRequest>> = callbackFlow {
     val reg = db.collection("payout_requests").addSnapshotListener { snap, error ->
       if (error != null) return@addSnapshotListener
-      val items = snap?.documents?.mapNotNull { it.toObject(PayoutRequest::class.java)?.copy(id = it.id) }
+      val items = snap?.documents?.mapNotNull { it.toObject(PayoutRequest::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.requestedAt?.seconds ?: 0L } ?: emptyList()
       trySend(items)
     }
@@ -76,7 +77,7 @@ class AdminRepository(
   fun observeAllReceipts(): Flow<List<ReceiptSubmission>> = callbackFlow {
     val reg = db.collection("receipts").addSnapshotListener { snap, error ->
       if (error != null) return@addSnapshotListener
-      val items = snap?.documents?.mapNotNull { it.toObject(ReceiptSubmission::class.java)?.copy(id = it.id) }
+      val items = snap?.documents?.mapNotNull { it.toObject(ReceiptSubmission::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.submittedAt?.seconds ?: 0L } ?: emptyList()
       trySend(items)
     }
@@ -87,7 +88,7 @@ class AdminRepository(
     val reg = db.collection("receipts").whereEqualTo("reviewStatus", ReceiptReviewStatus.PENDING.name)
       .addSnapshotListener { snap, error ->
         if (error != null) return@addSnapshotListener
-        val items = snap?.documents?.mapNotNull { it.toObject(ReceiptSubmission::class.java)?.copy(id = it.id) }
+        val items = snap?.documents?.mapNotNull { it.toObject(ReceiptSubmission::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
           ?.sortedByDescending { it.submittedAt?.seconds ?: 0L } ?: emptyList()
         trySend(items)
       }
@@ -97,7 +98,7 @@ class AdminRepository(
   fun observeAllCampaigns(): Flow<List<Campaign>> = callbackFlow {
     val reg = db.collection("campaigns").addSnapshotListener { snap, error ->
       if (error != null) return@addSnapshotListener
-      val items = snap?.documents?.mapNotNull { it.toObject(Campaign::class.java)?.copy(id = it.id) }
+      val items = snap?.documents?.mapNotNull { it.toObject(Campaign::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.updatedAt?.seconds ?: 0L } ?: emptyList()
       trySend(items)
     }
@@ -109,7 +110,7 @@ class AdminRepository(
       .whereEqualTo("verificationStatus", VerificationStatus.USER_SUBMITTED_UNVERIFIED.name)
       .addSnapshotListener { snap, error ->
         if (error != null) return@addSnapshotListener
-        val items = snap?.documents?.mapNotNull { it.toObject(CatalogProduct::class.java)?.copy(id = it.id) }
+        val items = snap?.documents?.mapNotNull { it.toObject(CatalogProduct::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
           ?: emptyList()
         trySend(items)
       }
@@ -119,7 +120,7 @@ class AdminRepository(
   fun observeDeletionRequests(): Flow<List<DeletionRequest>> = callbackFlow {
     val reg = db.collection("deletion_requests").addSnapshotListener { snap, error ->
       if (error != null) return@addSnapshotListener
-      val items = snap?.documents?.mapNotNull { it.toObject(DeletionRequest::class.java)?.copy(id = it.id) }
+      val items = snap?.documents?.mapNotNull { it.toObject(DeletionRequest::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.requestedAt?.seconds ?: 0L } ?: emptyList()
       trySend(items)
     }
@@ -129,7 +130,7 @@ class AdminRepository(
   fun observeAuditLogs(): Flow<List<AuditLog>> = callbackFlow {
     val reg = db.collection("audit_logs").addSnapshotListener { snap, error ->
       if (error != null) return@addSnapshotListener
-      val items = snap?.documents?.mapNotNull { it.toObject(AuditLog::class.java)?.copy(id = it.id) }
+      val items = snap?.documents?.mapNotNull { it.toObject(AuditLog::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.timestamp?.seconds ?: 0L } ?: emptyList()
       trySend(items)
     }
@@ -139,7 +140,7 @@ class AdminRepository(
   suspend fun fetchUserWalletSnapshot(userId: String): RewardWallet {
     return try {
       val snap = db.collection("users").document(userId).collection("wallet").document("summary").get().await()
-      if (snap.exists()) snap.toObject(RewardWallet::class.java) ?: RewardWallet(userId = userId)
+      if (snap.exists()) snap.toObject(RewardWallet::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) ?: RewardWallet(userId = userId)
       else RewardWallet(userId = userId)
     } catch (_: Exception) {
       RewardWallet(userId = userId)

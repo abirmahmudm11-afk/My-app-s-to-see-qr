@@ -1,6 +1,8 @@
 package com.example.data.model
 
+import androidx.annotation.Keep
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.IgnoreExtraProperties
 
 enum class VerificationStatus(val label: String) {
   VERIFIED_MERCHANT("Verified Merchant"),
@@ -87,6 +89,8 @@ enum class AdminRoleName {
   }
 }
 
+@Keep
+@IgnoreExtraProperties
 data class UserProfile(
   val id: String = "",
   val userId: String = "",
@@ -102,13 +106,19 @@ data class UserProfile(
   val updatedAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class ScanRecord(
   val id: String = "",
+  val localHistoryId: Long? = null,
   val userId: String = "",
   val barcodeValue: String = "",
   val barcodeFormat: String = "",
   val productName: String = "",
   val brand: String = "",
+  val category: String = "",
+  val description: String = "",
+  val imageUrl: String = "",
   val sourceProvider: String = "",
   val verificationStatus: String = VerificationStatus.UNKNOWN.name,
   val scanResult: String = "MATCHED",
@@ -123,6 +133,8 @@ data class ScanContext(
   val brand: String,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class RewardWallet(
   val id: String = "summary",
   val userId: String = "",
@@ -134,6 +146,8 @@ data class RewardWallet(
   val updatedAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class RewardTransaction(
   val id: String = "",
   val userId: String = "",
@@ -150,6 +164,8 @@ data class RewardTransaction(
   val createdAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class AppNotification(
   val id: String = "",
   val userId: String = "",
@@ -161,6 +177,8 @@ data class AppNotification(
   val createdAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class ReceiptSubmission(
   val id: String = "",
   val userId: String = "",
@@ -178,6 +196,8 @@ data class ReceiptSubmission(
   val updatedAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class Campaign(
   val id: String = "",
   val partnerId: String = "",
@@ -198,6 +218,8 @@ data class Campaign(
   val updatedAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class CatalogProduct(
   val id: String = "",
   val barcode: String = "",
@@ -216,6 +238,8 @@ data class CatalogProduct(
   val updatedAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class ProductOffer(
   val id: String = "",
   val barcode: String = "",
@@ -230,6 +254,8 @@ data class ProductOffer(
   val lastVerifiedAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class AdminRole(
   val id: String = "",
   val userId: String = "",
@@ -238,6 +264,8 @@ data class AdminRole(
   val createdAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class AuditLog(
   val id: String = "",
   val actorId: String = "",
@@ -271,6 +299,8 @@ enum class PayoutStatus {
   }
 }
 
+@Keep
+@IgnoreExtraProperties
 data class PayoutRequest(
   val id: String = "",
   val userId: String = "",
@@ -286,6 +316,8 @@ data class PayoutRequest(
   val updatedAt: Timestamp? = null,
 )
 
+@Keep
+@IgnoreExtraProperties
 data class DeletionRequest(
   val id: String = "",
   val userId: String = "",

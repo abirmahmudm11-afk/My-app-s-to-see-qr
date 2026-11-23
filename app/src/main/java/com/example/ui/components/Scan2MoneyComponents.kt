@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,7 +51,6 @@ import com.example.ui.theme.CrimsonAlert
 import com.example.ui.theme.CrimsonSoftTint
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
-import com.example.ui.theme.SwatchSunshine
 import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,7 +65,7 @@ fun VerificationLabel(
   val (bg, fg, icon) = when (status) {
     VerificationStatus.VERIFIED_MERCHANT -> Triple(EmeraldSoftTint, EmeraldTrust, Icons.Rounded.CheckCircle)
     VerificationStatus.LICENSED_PROVIDER -> Triple(CobaltSoftTint, CobaltInfo, Icons.Rounded.Shield)
-    VerificationStatus.OPEN_FOOD_FACTS -> Triple(CobaltSoftTint, CobaltInfo, Icons.Rounded.Public)
+    VerificationStatus.OPEN_FOOD_FACTS -> Triple(EmeraldSoftTint, EmeraldTrust, Icons.Rounded.Public)
     VerificationStatus.USER_SUBMITTED_UNVERIFIED -> Triple(AmberSoftTint, AmberNotice, Icons.Rounded.WarningAmber)
     VerificationStatus.UNKNOWN -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, Icons.Rounded.Info)
   }
@@ -132,20 +132,25 @@ fun ReceiptStatusBadge(
 fun SandboxCashbackBanner(modifier: Modifier = Modifier) {
   Surface(
     modifier = modifier.fillMaxWidth(),
-    color = SwatchSunshine.copy(alpha = 0.45f),
+    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
     shape = RoundedCornerShape(14.dp),
-    border = BorderStroke(1.dp, AmberNotice.copy(alpha = 0.3f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
   ) {
     Row(
       modifier = Modifier.padding(12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      Icon(Icons.Rounded.Info, contentDescription = null, tint = AmberNotice, modifier = Modifier.size(18.dp))
+      Icon(
+        Icons.Rounded.Info,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.size(18.dp),
+      )
       Text(
         text = "Sandbox Rewards Mode: Points (PTS) track verified receipt & campaign checks in Firestore. Non-cash demo ledger.",
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onBackground,
+        color = MaterialTheme.colorScheme.onSurface,
       )
     }
   }
@@ -174,14 +179,17 @@ fun GuestModeBanner(
           color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-          text = "Sign in with Google to sync scans, submit receipts & claim 100 PTS vouchers.",
+          text = "Scanning, Room history & missions work locally. Sign in with Google to sync & submit receipts.",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
       Spacer(Modifier.width(8.dp))
-      TextButton(onClick = onSignInClick) {
-        Text("Sign In", fontWeight = FontWeight.Bold)
+      TextButton(
+        onClick = onSignInClick,
+        modifier = Modifier.testTag("guest_banner_sign_in_button"),
+      ) {
+        Text("Sign In", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
       }
     }
   }
@@ -206,7 +214,11 @@ fun SectionHeader(
     )
     if (actionLabel != null && onAction != null) {
       TextButton(onClick = onAction) {
-        Text(actionLabel, style = MaterialTheme.typography.labelLarge)
+        Text(
+          actionLabel,
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.primary,
+        )
       }
     }
   }

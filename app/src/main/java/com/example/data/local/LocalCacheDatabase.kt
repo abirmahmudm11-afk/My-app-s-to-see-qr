@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -65,27 +66,40 @@ data class CachedProductEntity(
   }
 }
 
-@Entity(tableName = "local_scans")
-data class LocalScanEntity(
+@Entity(
+  tableName = "scan_history",
+  indices = [
+    Index(value = ["scannedAtMs"]),
+    Index(value = ["barcodeValue"]),
+  ],
+)
+data class ScanHistoryEntity(
   @PrimaryKey(autoGenerate = true) val id: Long = 0L,
   val userId: String,
   val barcodeValue: String,
   val barcodeFormat: String,
   val productName: String,
   val brand: String,
-  val sourceProvider: String,
+  val category: String,
+  val description: String,
+  val imageUrl: String,
+  val dataProvider: String,
   val verificationStatus: String,
   val scanResult: String,
   val scannedAtMs: Long,
 ) {
   fun toScanRecord(): ScanRecord = ScanRecord(
     id = "local_$id",
+    localHistoryId = id,
     userId = userId,
     barcodeValue = barcodeValue,
     barcodeFormat = barcodeFormat,
     productName = productName,
     brand = brand,
-    sourceProvider = sourceProvider,
+    category = category,
+    description = description,
+    imageUrl = imageUrl,
+    sourceProvider = dataProvider,
     verificationStatus = verificationStatus,
     scanResult = scanResult,
     localTimestampMs = scannedAtMs,
@@ -108,22 +122,41 @@ interface CachedProductDao {
 }
 
 @Dao
-interface LocalScanDao {
-  @Query("SELECT * FROM local_scans ORDER BY scannedAtMs DESC LIMIT 60")
-  fun observeRecent(): Flow<List<LocalScanEntity>>
+interface ScanHistoryDao {
+  @Query("SELECT * FROM scan_history ORDER BY scannedAtMs DESC LIMIT 200")
+  fun observeAll(): Flow<List<ScanHistoryEntity>>
+
+  @Query(
+    """
+    SELECT * FROM scan_history
+    WHERE productName LIKE '%' || :query || '%'
+       OR brand LIKE '%' || :query || '%'
+       OR barcodeValue LIKE '%' || :query || '%'
+       OR category LIKE '%' || :query || '%'
+    ORDER BY scannedAtMs DESC
+    LIMIT 200
+    """,
+  )
+  fun search(query: String): Flow<List<ScanHistoryEntity>>
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
-  suspend fun insert(scan: LocalScanEntity)
+  suspend fun insert(entry: ScanHistoryEntity): Long
+
+  @Query("DELETE FROM scan_history WHERE id = :id")
+  suspend fun deleteById(id: Long)
+
+  @Query("DELETE FROM scan_history")
+  suspend fun clearAll()
 }
 
 @Database(
-  entities = [CachedProductEntity::class, LocalScanEntity::class],
-  version = 1,
+  entities = [CachedProductEntity::class, ScanHistoryEntity::class],
+  version = 2,
   exportSchema = false,
 )
 abstract class LocalCacheDatabase : RoomDatabase() {
   abstract fun cachedProductDao(): CachedProductDao
-  abstract fun localScanDao(): LocalScanDao
+  abstract fun scanHistoryDao(): ScanHistoryDao
 
   companion object {
     fun build(context: Context): LocalCacheDatabase =

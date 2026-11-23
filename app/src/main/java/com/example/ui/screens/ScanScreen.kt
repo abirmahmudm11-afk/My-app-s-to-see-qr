@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.camera.core.Camera
@@ -17,12 +18,17 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -49,9 +55,9 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FlashOff
 import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.PhotoLibrary
-import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -81,8 +87,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,11 +100,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ScanContext
 import com.example.domain.SupportedBarcodeFormat
+import com.example.ui.components.BarcodeFeedbackPlayer
 import com.example.ui.components.VerificationLabel
 import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricLime
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.ObsidianDivider
+import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.ObsidianMutedText
 import com.example.ui.theme.ObsidianOnLime
 import com.example.ui.viewmodel.ScannerUiState
 import com.example.ui.viewmodel.ScannerViewModel
@@ -114,12 +126,15 @@ fun ScanScreen(
   reducedMotion: Boolean,
   onClearScanContext: () -> Unit,
   onOpenProductDetail: (String) -> Unit,
+  onOpenHistory: () -> Unit,
   onOpenRewardsOrPromo: (String?) -> Unit,
   onShowMessage: (String) -> Unit,
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
+  val haptic = LocalHapticFeedback.current
   val uiState by scannerViewModel.uiState.collectAsStateWithLifecycle()
+  val detectionPulseSeq by scannerViewModel.detectionPulseSeq.collectAsStateWithLifecycle()
 
   var hasCameraPermission by remember {
     mutableStateOf(
@@ -131,7 +146,26 @@ fun ScanScreen(
   var hasFlashUnit by remember { mutableStateOf(false) }
   var boundCamera by remember { mutableStateOf<Camera?>(null) }
   var showManualDialog by remember { mutableStateOf(false) }
+  var showIdleTip by remember { mutableStateOf(false) }
   var manualCode by remember { mutableStateOf(scanContext?.barcodeValue ?: "") }
+
+  val feedbackPlayer = remember { BarcodeFeedbackPlayer() }
+  val rippleProgress = remember { Animatable(0f) }
+
+  LaunchedEffect(detectionPulseSeq) {
+    if (detectionPulseSeq > 0L) {
+      feedbackPlayer.playSuccessBeep()
+      runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+      if (!reducedMotion) {
+        rippleProgress.snapTo(0.01f)
+        rippleProgress.animateTo(
+          targetValue = 1f,
+          animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+        )
+        rippleProgress.snapTo(0f)
+      }
+    }
+  }
 
   val permissionLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.RequestPermission(),
@@ -161,8 +195,9 @@ fun ScanScreen(
   val mlKitScanner = remember { BarcodeScanning.getClient(barcodeOptions) }
   val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
 
+  // Google Play Policy compliant zero-permission Photo Picker
   val photoPickerLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.GetContent(),
+    contract = ActivityResultContracts.PickVisualMedia(),
   ) { uri: Uri? ->
     if (uri != null) {
       runCatching {
@@ -191,16 +226,18 @@ fun ScanScreen(
 
   DisposableEffect(Unit) {
     onDispose {
+      feedbackPlayer.release()
       runCatching { mlKitScanner.close() }
       runCatching { analysisExecutor.shutdown() }
     }
   }
 
-  // 15s inactivity timer while actively waiting in live camera state
+  // Non-blocking tip after 12s of idle scanning instead of interrupting the camera with an error card
   LaunchedEffect(uiState, hasCameraPermission) {
+    showIdleTip = false
     if (hasCameraPermission && uiState is ScannerUiState.Idle) {
-      delay(15_000L)
-      scannerViewModel.reportTimeout()
+      delay(12_000L)
+      showIdleTip = true
     }
   }
 
@@ -228,12 +265,12 @@ fun ScanScreen(
             color = ElectricLime,
           )
           Text(
-            text = "13 Formats • < 2s Lookup",
+            text = "13 Formats • Instant Feedback",
             style = MaterialTheme.typography.titleMedium,
             color = Color.White,
           )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
           if (hasFlashUnit) {
             IconButton(
               onClick = {
@@ -241,6 +278,7 @@ fun ScanScreen(
                 torchEnabled = next
                 runCatching { boundCamera?.cameraControl?.enableTorch(next) }
               },
+              modifier = Modifier.testTag("scanner_torch_button"),
             ) {
               Icon(
                 imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
@@ -249,10 +287,26 @@ fun ScanScreen(
               )
             }
           }
-          IconButton(onClick = { photoPickerLauncher.launch("image/*") }) {
+          IconButton(
+            onClick = {
+              photoPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+              )
+            },
+            modifier = Modifier.testTag("scanner_photo_icon_button"),
+          ) {
             Icon(Icons.Rounded.PhotoLibrary, contentDescription = "Scan from photo", tint = Color.White)
           }
-          IconButton(onClick = { showManualDialog = true }) {
+          IconButton(
+            onClick = onOpenHistory,
+            modifier = Modifier.testTag("scanner_history_button"),
+          ) {
+            Icon(Icons.Rounded.History, contentDescription = "Scan History", tint = Color.White)
+          }
+          IconButton(
+            onClick = { showManualDialog = true },
+            modifier = Modifier.testTag("scanner_manual_icon_button"),
+          ) {
             Icon(Icons.Rounded.Edit, contentDescription = "Manual GTIN entry", tint = ElectricLime)
           }
         }
@@ -260,9 +314,9 @@ fun ScanScreen(
 
       if (scanContext != null) {
         Surface(
-          color = Color(0xFF192420),
+          color = ObsidianElevated,
           shape = RoundedCornerShape(14.dp),
-          border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.5f)),
+          border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.45f)),
         ) {
           Row(
             modifier = Modifier
@@ -289,7 +343,7 @@ fun ScanScreen(
                 overflow = TextOverflow.Ellipsis,
               )
             }
-            IconButton(onClick = onClearScanContext, modifier = Modifier.size(28.dp)) {
+            IconButton(onClick = onClearScanContext, modifier = Modifier.size(32.dp)) {
               Icon(Icons.Rounded.Close, contentDescription = "Clear re-scan context", tint = Color.White, modifier = Modifier.size(16.dp))
             }
           }
@@ -304,7 +358,7 @@ fun ScanScreen(
         .fillMaxWidth()
         .padding(horizontal = 16.dp)
         .clip(RoundedCornerShape(24.dp))
-        .background(Color(0xFF121C18)),
+        .background(Color(0xFF0A100E)),
       contentAlignment = Alignment.Center,
     ) {
       if (hasCameraPermission) {
@@ -341,7 +395,7 @@ fun ScanScreen(
           Text(
             text = "Allow camera permission to scan retail barcodes live, or choose a photo / enter a GTIN manually below.",
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFFB5C4BD),
+            color = ObsidianMutedText,
           )
           Button(
             onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
@@ -350,24 +404,49 @@ fun ScanScreen(
               contentColor = ObsidianOnLime,
             ),
             shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.testTag("enable_camera_button"),
           ) {
             Text("Enable Camera")
           }
         }
       }
 
-      // Animated Reticle & Subtle Up-and-Down Scanning Line inside Camera View Area
+      // Animated Reticle, Scanning Sweep & Detection Ripple Overlay
       ScanningReticleOverlay(
         isActive = uiState is ScannerUiState.Idle,
+        detectionRippleProgress = rippleProgress.value,
         reducedMotion = reducedMotion,
         modifier = Modifier.fillMaxSize(),
       )
 
-      // Overlay State Cards (LookingUp, Matched, NotFound, Error)
+      // Subtle non-blocking idle hint pill at the bottom of the viewfinder
+      androidx.compose.animation.AnimatedVisibility(
+        visible = showIdleTip && uiState is ScannerUiState.Idle,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .padding(14.dp),
+      ) {
+        Surface(
+          color = DeepObsidian.copy(alpha = 0.88f),
+          shape = RoundedCornerShape(14.dp),
+          border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.4f)),
+        ) {
+          Text(
+            text = "Hold barcode steady in the reticle, or pick a photo / sample below.",
+            style = MaterialTheme.typography.bodySmall,
+            color = EmeraldSoftTint,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+          )
+        }
+      }
+
+      // Overlay State Cards (LookingUp, Matched, NotFound, QrUrlDetected, QrPromoDetected, Error)
       when (val state = uiState) {
         is ScannerUiState.LookingUp -> {
           Surface(
-            color = DeepObsidian.copy(alpha = 0.92f),
+            color = DeepObsidian.copy(alpha = 0.94f),
             shape = RoundedCornerShape(18.dp),
             border = BorderStroke(1.dp, ElectricLime),
           ) {
@@ -379,7 +458,7 @@ fun ScanScreen(
               CircularProgressIndicator(modifier = Modifier.size(20.dp), color = ElectricLime, strokeWidth = 2.dp)
               Column {
                 Text("Looking up ${state.barcode}", style = MaterialTheme.typography.titleMedium, color = Color.White)
-                Text("${state.format.label} • Validated GS1 format", style = MaterialTheme.typography.labelSmall, color = ElectricLime)
+                Text("${state.format.label} • Validated format", style = MaterialTheme.typography.labelSmall, color = ElectricLime)
               }
             }
           }
@@ -389,7 +468,8 @@ fun ScanScreen(
             modifier = Modifier
               .align(Alignment.BottomCenter)
               .fillMaxWidth()
-              .padding(14.dp),
+              .padding(14.dp)
+              .testTag("scanner_matched_card"),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
           ) {
@@ -458,7 +538,7 @@ fun ScanScreen(
             ) {
               Text("Product Not Found in Catalog", style = MaterialTheme.typography.titleMedium)
               Text(
-                "Barcode ${state.barcode} (${state.format.label}) was not returned by merchant records or Open Food Facts.",
+                "Barcode ${state.barcode} (${state.format.label}) was saved to your History but not returned by Open Food Facts or merchant records.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -662,9 +742,11 @@ fun ScanScreen(
       ) {
         OutlinedButton(
           onClick = { showManualDialog = true },
-          modifier = Modifier.weight(1f),
+          modifier = Modifier
+            .weight(1f)
+            .testTag("scanner_manual_entry_button"),
           shape = RoundedCornerShape(12.dp),
-          border = BorderStroke(1.dp, Color(0xFF31443D)),
+          border = BorderStroke(1.dp, ObsidianDivider),
           contentPadding = PaddingValues(vertical = 10.dp),
         ) {
           Icon(Icons.Rounded.Edit, contentDescription = null, tint = ElectricLime, modifier = Modifier.size(16.dp))
@@ -672,10 +754,16 @@ fun ScanScreen(
           Text("Manual GTIN", color = Color.White)
         }
         OutlinedButton(
-          onClick = { photoPickerLauncher.launch("image/*") },
-          modifier = Modifier.weight(1f),
+          onClick = {
+            photoPickerLauncher.launch(
+              PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+          },
+          modifier = Modifier
+            .weight(1f)
+            .testTag("scanner_photo_button"),
           shape = RoundedCornerShape(12.dp),
-          border = BorderStroke(1.dp, Color(0xFF31443D)),
+          border = BorderStroke(1.dp, ObsidianDivider),
           contentPadding = PaddingValues(vertical = 10.dp),
         ) {
           Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
@@ -689,17 +777,19 @@ fun ScanScreen(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text("Sample:", style = MaterialTheme.typography.labelSmall, color = Color(0xFFA2B3AA))
+        Text("Sample:", style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
         listOf(
           Triple("3017620422003", "Nutella", SupportedBarcodeFormat.EAN_13),
           Triple("https://world.openfoodfacts.org/product/5449000000996", "QR URL", SupportedBarcodeFormat.QR_CODE),
           Triple("PROMO:BONUS100", "QR Promo", SupportedBarcodeFormat.QR_CODE),
         ).forEach { (code, label, fmt) ->
           Surface(
-            modifier = Modifier.clickable {
-              scannerViewModel.processScannedBarcode(code, fmt, fromCamera = false)
-            },
-            color = Color(0xFF192420),
+            modifier = Modifier
+              .clickable {
+                scannerViewModel.processScannedBarcode(code, fmt, fromCamera = false)
+              }
+              .testTag("sample_scan_$label"),
+            color = ObsidianElevated,
             shape = RoundedCornerShape(8.dp),
           ) {
             Text(
@@ -853,6 +943,7 @@ private fun CameraXBarcodeViewfinder(
 @Composable
 private fun ScanningReticleOverlay(
   isActive: Boolean,
+  detectionRippleProgress: Float,
   reducedMotion: Boolean,
   modifier: Modifier = Modifier,
 ) {
@@ -873,41 +964,43 @@ private fun ScanningReticleOverlay(
   }
 
   Canvas(modifier = modifier) {
-    val boxW = size.width * 0.74f
-    val boxH = size.height * 0.42f
+    val boxW = size.width * 0.76f
+    val boxH = size.height * 0.44f
     val left = (size.width - boxW) / 2f
     val top = (size.height - boxH) / 2f
     val right = left + boxW
     val bottom = top + boxH
     val corner = 24.dp.toPx()
 
-    // Subtle dark scrim outside scan frame
-    drawRect(color = Color.Black.copy(alpha = 0.24f))
+    // Subtle obsidian scrim outside scan frame
+    drawRect(color = Color(0xFF060A09).copy(alpha = 0.28f))
 
     // Reticle frame border
+    val isLocked = detectionRippleProgress > 0f
     drawRect(
-      color = Color.White.copy(alpha = 0.28f),
+      color = if (isLocked) ElectricLime.copy(alpha = 0.72f) else Color.White.copy(alpha = 0.28f),
       topLeft = Offset(left, top),
       size = androidx.compose.ui.geometry.Size(boxW, boxH),
-      style = Stroke(width = 1.5.dp.toPx()),
+      style = Stroke(width = if (isLocked) 2.5.dp.toPx() else 1.5.dp.toPx()),
     )
 
     // Electric Lime corner brackets
     val strokeW = 3.5.dp.toPx()
+    val bracketColor = ElectricLime
     // Top-left
-    drawLine(ElectricLime, Offset(left, top), Offset(left + corner, top), strokeW)
-    drawLine(ElectricLime, Offset(left, top), Offset(left, top + corner), strokeW)
+    drawLine(bracketColor, Offset(left, top), Offset(left + corner, top), strokeW)
+    drawLine(bracketColor, Offset(left, top), Offset(left, top + corner), strokeW)
     // Top-right
-    drawLine(ElectricLime, Offset(right - corner, top), Offset(right, top), strokeW)
-    drawLine(ElectricLime, Offset(right, top), Offset(right, top + corner), strokeW)
+    drawLine(bracketColor, Offset(right - corner, top), Offset(right, top), strokeW)
+    drawLine(bracketColor, Offset(right, top), Offset(right, top + corner), strokeW)
     // Bottom-left
-    drawLine(ElectricLime, Offset(left, bottom), Offset(left + corner, bottom), strokeW)
-    drawLine(ElectricLime, Offset(left, bottom - corner), Offset(left, bottom), strokeW)
+    drawLine(bracketColor, Offset(left, bottom), Offset(left + corner, bottom), strokeW)
+    drawLine(bracketColor, Offset(left, bottom - corner), Offset(left, bottom), strokeW)
     // Bottom-right
-    drawLine(ElectricLime, Offset(right - corner, bottom), Offset(right, bottom), strokeW)
-    drawLine(ElectricLime, Offset(right, bottom - corner), Offset(right, bottom), strokeW)
+    drawLine(bracketColor, Offset(right - corner, bottom), Offset(right, bottom), strokeW)
+    drawLine(bracketColor, Offset(right, bottom - corner), Offset(right, bottom), strokeW)
 
-    // Subtle animated scanning laser line moving up and down inside the camera frame
+    // Subtle animated scanning laser line inside the camera frame
     if (isActive) {
       val lineY = top + (boxH * scanProgress)
       drawRect(
@@ -929,6 +1022,36 @@ private fun ScanningReticleOverlay(
         end = Offset(right - 8.dp.toPx(), lineY),
         strokeWidth = 2.5.dp.toPx(),
       )
+    }
+
+    // Detection ripple animation expanding outward on barcode lock
+    if (detectionRippleProgress > 0f) {
+      val center = Offset(size.width / 2f, size.height / 2f)
+      val maxRadius = minOf(boxW, boxH) * 0.72f
+      val outerRadius = maxRadius * detectionRippleProgress
+      val innerRadius = maxRadius * (detectionRippleProgress * 0.65f)
+      val outerAlpha = (1f - detectionRippleProgress).coerceIn(0f, 1f) * 0.78f
+      val innerAlpha = (1f - detectionRippleProgress * 0.7f).coerceIn(0f, 1f) * 0.55f
+
+      drawCircle(
+        color = ElectricLime.copy(alpha = outerAlpha * 0.2f),
+        radius = outerRadius,
+        center = center,
+      )
+      drawCircle(
+        color = ElectricLime.copy(alpha = outerAlpha),
+        radius = outerRadius,
+        center = center,
+        style = Stroke(width = 3.dp.toPx()),
+      )
+      if (innerRadius > 4f) {
+        drawCircle(
+          color = EmeraldSoftTint.copy(alpha = innerAlpha),
+          radius = innerRadius,
+          center = center,
+          style = Stroke(width = 2.dp.toPx()),
+        )
+      }
     }
   }
 }

@@ -47,6 +47,9 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
   private val _uiState = MutableStateFlow<ScannerUiState>(ScannerUiState.Idle)
   val uiState: StateFlow<ScannerUiState> = _uiState.asStateFlow()
 
+  private val _detectionPulseSeq = MutableStateFlow(0L)
+  val detectionPulseSeq: StateFlow<Long> = _detectionPulseSeq.asStateFlow()
+
   private var lastProcessedBarcode: String? = null
   private var lastProcessedAtMs: Long = 0L
 
@@ -66,6 +69,7 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
       is BarcodeValidator.QrPayloadResolution.WebUrl -> {
         lastProcessedBarcode = clean
         lastProcessedAtMs = now
+        _detectionPulseSeq.value = _detectionPulseSeq.value + 1L
         viewModelScope.launch {
           runCatching {
             container.userWalletRepository.recordScan(
@@ -73,6 +77,9 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
               barcodeFormat = format.label,
               productName = "QR Product Link",
               brand = "",
+              category = "QR Web Link",
+              description = qrResolution.url,
+              imageUrl = "",
               sourceProvider = "QR URL",
               verificationStatus = VerificationStatus.UNKNOWN.name,
               scanResult = "MATCHED",
@@ -90,13 +97,17 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
       is BarcodeValidator.QrPayloadResolution.PromoCode -> {
         lastProcessedBarcode = clean
         lastProcessedAtMs = now
+        _detectionPulseSeq.value = _detectionPulseSeq.value + 1L
         viewModelScope.launch {
           runCatching {
             container.userWalletRepository.recordScan(
               barcodeValue = clean.take(128),
               barcodeFormat = format.label,
               productName = "Promo: ${qrResolution.code}",
-              brand = "",
+              brand = qrResolution.campaignHint.orEmpty(),
+              category = "Promotional QR",
+              description = "Promo code ${qrResolution.code}",
+              imageUrl = "",
               sourceProvider = "QR Promo",
               verificationStatus = VerificationStatus.UNKNOWN.name,
               scanResult = "MATCHED",
@@ -123,12 +134,14 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
       is BarcodeValidationResult.Valid -> {
         lastProcessedBarcode = validation.normalizedValue
         lastProcessedAtMs = now
+        _detectionPulseSeq.value = _detectionPulseSeq.value + 1L
         lookupValidatedBarcode(validation.normalizedValue, validation.format)
       }
     }
   }
 
   fun lookupEmbeddedBarcode(barcode: String) {
+    _detectionPulseSeq.value = _detectionPulseSeq.value + 1L
     lookupValidatedBarcode(barcode.trim(), SupportedBarcodeFormat.MANUAL)
   }
 
@@ -144,6 +157,9 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
               barcodeFormat = format.label,
               productName = product.name,
               brand = product.brand,
+              category = product.category,
+              description = product.description,
+              imageUrl = product.imageUrl,
               sourceProvider = product.dataProvider,
               verificationStatus = product.verificationStatus,
               scanResult = "MATCHED",
@@ -156,6 +172,25 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
             fromOfflineCache = outcome.fromOfflineCache,
           )
         }
+        is ProductLookupOutcome.NetworkError -> {
+          runCatching {
+            container.userWalletRepository.recordScan(
+              barcodeValue = barcode,
+              barcodeFormat = format.label,
+              productName = "Pending Lookup ($barcode)",
+              brand = "",
+              category = "",
+              description = outcome.message,
+              imageUrl = "",
+              sourceProvider = "Network Pending",
+              verificationStatus = VerificationStatus.UNKNOWN.name,
+              scanResult = "NETWORK_ERROR",
+            )
+          }
+          _uiState.value = ScannerUiState.Error(
+            "Network lookup failed for $barcode: ${outcome.message}. Saved to Scan History for later lookup.",
+          )
+        }
         is ProductLookupOutcome.NotFound, null -> {
           runCatching {
             container.userWalletRepository.recordScan(
@@ -163,6 +198,9 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
               barcodeFormat = format.label,
               productName = "Unlisted Barcode",
               brand = "",
+              category = "",
+              description = "No catalog match returned",
+              imageUrl = "",
               sourceProvider = "None",
               verificationStatus = VerificationStatus.UNKNOWN.name,
               scanResult = "NOT_FOUND",
@@ -171,14 +209,6 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
           _uiState.value = ScannerUiState.NotFound(barcode, format)
         }
       }
-    }
-  }
-
-  fun reportTimeout() {
-    if (_uiState.value is ScannerUiState.Idle) {
-      _uiState.value = ScannerUiState.Error(
-        "No barcode detected after 15 seconds. Check lighting, steady the frame, or try manual GTIN / QR entry.",
-      )
     }
   }
 

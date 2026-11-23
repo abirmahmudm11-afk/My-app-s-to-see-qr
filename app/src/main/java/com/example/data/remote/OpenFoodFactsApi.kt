@@ -38,6 +38,13 @@ interface OpenFoodFactsApi {
     @Query("fields") fields: String = "code,product_name,brands,categories,ingredients_text,generic_name,image_front_url,image_url,countries,manufacturing_places",
   ): OpenFoodFactsProductResponse
 
+  @GET("api/v2/search")
+  suspend fun searchProductsV2(
+    @Query("search_terms") searchTerms: String,
+    @Query("page_size") pageSize: Int = 20,
+    @Query("fields") fields: String = "code,product_name,brands,categories,ingredients_text,generic_name,image_front_url,image_url,countries,manufacturing_places",
+  ): OpenFoodFactsSearchResponse
+
   @GET("cgi/search.pl")
   suspend fun searchProducts(
     @Query("search_terms") searchTerms: String,

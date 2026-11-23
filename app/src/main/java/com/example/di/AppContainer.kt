@@ -10,6 +10,7 @@ import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.repository.AdminRepository
 import com.example.data.repository.ProductRepository
 import com.example.data.repository.ReceiptAndCampaignRepository
+import com.example.data.repository.ScanHistoryRepository
 import com.example.data.repository.UserWalletRepository
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
@@ -48,7 +49,6 @@ class AppContainer(context: Context) {
   )
 
   init {
-    // Validate Firestore server connectivity on startup
     CoroutineScope(Dispatchers.IO).launch {
       try {
         firestore.collection("test").document("connection").get(Source.SERVER)
@@ -64,11 +64,11 @@ class AppContainer(context: Context) {
   private val localDatabase = LocalCacheDatabase.build(appContext)
 
   private val okHttpClient = OkHttpClient.Builder()
-    .connectTimeout(10, TimeUnit.SECONDS)
-    .readTimeout(10, TimeUnit.SECONDS)
+    .connectTimeout(20, TimeUnit.SECONDS)
+    .readTimeout(20, TimeUnit.SECONDS)
     .addInterceptor { chain ->
       val req = chain.request().newBuilder()
-        .header("User-Agent", "SCAN2MONEY-Android/1.0")
+        .header("User-Agent", "SCAN2MONEY-Android/1.0 (contact@scan2money.app)")
         .build()
       chain.proceed(req)
     }
@@ -89,6 +89,7 @@ class AppContainer(context: Context) {
     .create(OpenFoodFactsApi::class.java)
 
   val credentialAuth = CredentialManagerAuth(auth)
+  val scanHistoryRepository = ScanHistoryRepository(localDatabase.scanHistoryDao())
   val productRepository = ProductRepository(
     db = firestore,
     auth = auth,
@@ -98,7 +99,7 @@ class AppContainer(context: Context) {
   val userWalletRepository = UserWalletRepository(
     db = firestore,
     auth = auth,
-    localScanDao = localDatabase.localScanDao(),
+    scanHistoryRepository = scanHistoryRepository,
   )
   val receiptCampaignRepository = ReceiptAndCampaignRepository(
     db = firestore,
