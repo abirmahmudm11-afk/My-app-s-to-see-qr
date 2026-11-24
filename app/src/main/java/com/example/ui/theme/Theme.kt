@@ -6,6 +6,7 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 private val LightColorScheme = lightColorScheme(
@@ -15,7 +16,7 @@ private val LightColorScheme = lightColorScheme(
   onPrimaryContainer = DeepObsidian,
   secondary = DeepObsidian,
   onSecondary = ElectricLime,
-  secondaryContainer = SoftStone,
+  secondaryContainer = SwatchSky,
   onSecondaryContainer = DeepObsidian,
   tertiary = CobaltInfo,
   onTertiary = CrispWhite,
@@ -39,13 +40,13 @@ private val DarkColorScheme = darkColorScheme(
   onPrimary = ObsidianOnLime,
   primaryContainer = NightElevated,
   onPrimaryContainer = ElectricLime,
-  secondary = EmeraldTrust,
+  secondary = TealVivid,
   onSecondary = CrispWhite,
-  secondaryContainer = NightElevated,
-  onSecondaryContainer = EmeraldSoftTint,
-  tertiary = CobaltInfo,
-  onTertiary = CrispWhite,
-  tertiaryContainer = NightElevated,
+  secondaryContainer = Color(0xFF153447),
+  onSecondaryContainer = Color(0xFFBFE3FF),
+  tertiary = Color(0xFF60A5FA),
+  onTertiary = DeepObsidian,
+  tertiaryContainer = Color(0xFF1A2947),
   onTertiaryContainer = NightTextPrimary,
   background = NightSurface,
   onBackground = NightTextPrimary,
@@ -54,10 +55,10 @@ private val DarkColorScheme = darkColorScheme(
   surfaceVariant = NightElevated,
   onSurfaceVariant = NightTextSecondary,
   outline = NightBorder,
-  error = CrimsonAlert,
-  onError = CrispWhite,
-  errorContainer = CrimsonSoftTint,
-  onErrorContainer = CrimsonAlert,
+  error = Color(0xFFF87171),
+  onError = DeepObsidian,
+  errorContainer = Color(0xFF45121B),
+  onErrorContainer = Color(0xFFFFB4BE),
 )
 
 val Scan2MoneyShapes = Shapes(

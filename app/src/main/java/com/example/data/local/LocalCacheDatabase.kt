@@ -139,6 +139,12 @@ interface ScanHistoryDao {
   )
   fun search(query: String): Flow<List<ScanHistoryEntity>>
 
+  @Query("SELECT * FROM scan_history WHERE id = :id LIMIT 1")
+  suspend fun findById(id: Long): ScanHistoryEntity?
+
+  @Query("SELECT * FROM scan_history WHERE barcodeValue = :barcode ORDER BY scannedAtMs DESC LIMIT 1")
+  suspend fun findLatestByBarcode(barcode: String): ScanHistoryEntity?
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insert(entry: ScanHistoryEntity): Long
 

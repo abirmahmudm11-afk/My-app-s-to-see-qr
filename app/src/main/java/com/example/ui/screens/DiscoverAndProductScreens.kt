@@ -3,8 +3,10 @@ package com.example.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,13 +33,17 @@ import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.QrCode2
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,19 +60,29 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.example.R
 import com.example.data.model.OfferAvailability
 import com.example.data.model.ProductOffer
+import com.example.data.repository.ComparedOffer
 import com.example.domain.CampaignEligibilityEngine
 import com.example.domain.MarketConfig
 import com.example.ui.components.GuestModeBanner
@@ -73,10 +91,25 @@ import com.example.ui.components.SectionHeader
 import com.example.ui.components.VerificationLabel
 import com.example.ui.theme.AmberNotice
 import com.example.ui.theme.AmberSoftTint
+import com.example.ui.theme.CobaltInfo
+import com.example.ui.theme.CobaltSoftTint
+import com.example.ui.theme.CrimsonAlert
+import com.example.ui.theme.CrimsonSoftTint
+import com.example.ui.theme.DeepObsidian
+import com.example.ui.theme.ElectricLime
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.HeaderEmeraldCobaltBrush
+import com.example.ui.theme.HeroObsidianEmeraldBrush
+import com.example.ui.theme.ObsidianOnLime
+import com.example.ui.theme.TangerineAccent
+import com.example.ui.theme.TangerineSoftTint
+import com.example.ui.theme.TealVivid
+import com.example.ui.theme.VioletAccent
+import com.example.ui.theme.VioletSoftTint
 import com.example.ui.viewmodel.MainUiState
 import com.example.ui.viewmodel.ProductDetailViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun DiscoverScreen(
@@ -95,13 +128,51 @@ fun DiscoverScreen(
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
+    // Rich Gradient Discover Banner
     item {
-      Text("Discover Catalog", style = MaterialTheme.typography.headlineMedium)
-      Text(
-        "Search Open Food Facts, Firestore verified merchants, or local offline cache.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
+      Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .background(HeaderEmeraldCobaltBrush)
+            .padding(16.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Surface(color = ElectricLime, shape = RoundedCornerShape(8.dp)) {
+              Text(
+                "OPEN CATALOG ENGINE",
+                style = MaterialTheme.typography.labelSmall,
+                color = ObsidianOnLime,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+              )
+            }
+            Text(
+              "Discover Catalog",
+              style = MaterialTheme.typography.headlineMedium,
+              color = Color.White,
+            )
+            Text(
+              "Search Open Food Facts, Firestore verified merchants, or local offline cache.",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White.copy(alpha = 0.86f),
+            )
+          }
+          Image(
+            painter = painterResource(id = R.drawable.img_discover_basket),
+            contentDescription = "Discover grocery basket",
+            modifier = Modifier
+              .size(68.dp)
+              .clip(RoundedCornerShape(16.dp)),
+            contentScale = ContentScale.Crop,
+          )
+        }
+      }
     }
 
     item {
@@ -114,7 +185,7 @@ fun DiscoverScreen(
           value = query,
           onValueChange = { query = it },
           placeholder = { Text("Product name, brand, or GTIN barcode") },
-          leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+          leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = EmeraldTrust) },
           singleLine = true,
           keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
           keyboardActions = KeyboardActions(onSearch = { onSearch(query) }),
@@ -125,27 +196,47 @@ fun DiscoverScreen(
           onClick = { onSearch(query) },
           shape = RoundedCornerShape(14.dp),
           modifier = Modifier.height(54.dp),
+          colors = ButtonDefaults.buttonColors(
+            containerColor = EmeraldTrust,
+            contentColor = Color.White,
+          ),
         ) {
-          Text("Go")
+          Text("Go", fontWeight = FontWeight.Bold)
         }
       }
     }
 
     item {
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Organic Oats", "Sparkling Water", "3017620422003").forEach { quick ->
+      val chipStyles = listOf(
+        Triple("Organic Oats", EmeraldSoftTint, EmeraldTrust),
+        Triple("Sparkling Water", CobaltSoftTint, CobaltInfo),
+        Triple("3017620422003", VioletSoftTint, VioletAccent),
+        Triple("5449000000996", TangerineSoftTint, TangerineAccent),
+      )
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        chipStyles.forEach { (quick, bg, fg) ->
           Surface(
-            modifier = Modifier.clickable {
-              query = quick
-              onSearch(quick)
-            },
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier
+              .clip(RoundedCornerShape(10.dp))
+              .clickable {
+                query = quick
+                onSearch(quick)
+              },
+            color = bg,
             shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, fg.copy(alpha = 0.28f)),
           ) {
             Text(
               quick,
               style = MaterialTheme.typography.labelSmall,
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+              color = fg,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
             )
           }
         }
@@ -169,10 +260,10 @@ fun DiscoverScreen(
             Icon(Icons.Rounded.CloudOff, contentDescription = null, tint = AmberNotice)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Text("Catalog Search Notice", style = MaterialTheme.typography.titleSmall, color = AmberNotice)
-              Text(uiState.searchError, style = MaterialTheme.typography.bodySmall)
+              Text(uiState.searchError, style = MaterialTheme.typography.bodySmall, color = DeepObsidian)
             }
             TextButton(onClick = { onSearch(query) }) {
-              Text("Retry")
+              Text("Retry", color = AmberNotice, fontWeight = FontWeight.Bold)
             }
           }
         }
@@ -184,36 +275,78 @@ fun DiscoverScreen(
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 20.dp),
+            .padding(vertical = 24.dp),
           horizontalArrangement = Arrangement.Center,
         ) {
-          CircularProgressIndicator()
+          CircularProgressIndicator(color = EmeraldTrust)
         }
       }
     } else if (displayList.isEmpty()) {
       item {
+        val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
         Card(
-          shape = RoundedCornerShape(18.dp),
+          shape = RoundedCornerShape(22.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          border = BorderStroke(1.dp, CobaltInfo.copy(alpha = 0.3f)),
         ) {
-          Column(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Text(
-              text = if (query.isBlank()) "Local cache is empty" else "No matching products",
-              style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-              text = "Scan a barcode or search by product name / 13-digit EAN.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(onClick = onOpenScan, shape = RoundedCornerShape(12.dp)) {
-              Text("Open Scanner")
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                  Brush.horizontalGradient(
+                    if (isDark) listOf(Color(0xFF13263F), Color(0xFF112E28)) else listOf(CobaltSoftTint, EmeraldSoftTint),
+                  ),
+                )
+                .padding(16.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+              Image(
+                painter = painterResource(id = R.drawable.img_discover_basket),
+                contentDescription = "Browse products",
+                modifier = Modifier
+                  .size(76.dp)
+                  .clip(RoundedCornerShape(16.dp)),
+                contentScale = ContentScale.Crop,
+              )
+              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                  text = if (query.isBlank()) "Start exploring verified products" else "No matching products",
+                  style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                  text = "Scan any retail barcode or tap a quick search tag above to load nutrition facts and compare prices.",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+            Row(
+              modifier = Modifier.padding(14.dp),
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Button(
+                onClick = {
+                  query = "3017620422003"
+                  onSearch("3017620422003")
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CobaltInfo, contentColor = Color.White),
+              ) {
+                Text("Search Sample", fontWeight = FontWeight.Bold)
+              }
+              Button(
+                onClick = onOpenScan,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ElectricLime, contentColor = ObsidianOnLime),
+              ) {
+                Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Open Scanner", fontWeight = FontWeight.Bold)
+              }
             }
           }
         }
@@ -222,6 +355,7 @@ fun DiscoverScreen(
       item {
         SectionHeader(
           title = if (query.isBlank()) "Cached Products (${displayList.size})" else "Results (${displayList.size})",
+          accentColor = CobaltInfo,
         )
       }
       items(displayList, key = { it.barcode }) { product ->
@@ -249,6 +383,8 @@ fun ProductDetailScreen(
   val detailState by productDetailViewModel.uiState.collectAsStateWithLifecycle()
   val market = MarketConfig.findByCountry(mainUiState.preferences.countryCode)
   val isSignedIn = mainUiState.firebaseUser != null
+  val listState = rememberLazyListState()
+  val scope = rememberCoroutineScope()
 
   var showAddOfferDialog by remember { mutableStateOf(false) }
   var storeInput by remember { mutableStateOf("") }
@@ -272,6 +408,21 @@ fun ProductDetailScreen(
   }
 
   val product = detailState.product
+  val triggerCompareOffers: () -> Unit = {
+    productDetailViewModel.compareOffers(barcode, market.countryCode)
+    scope.launch {
+      listState.animateScrollToItem(2)
+    }
+  }
+
+  val openWebPriceSearch: (String) -> Unit = { url ->
+    runCatching {
+      context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }.onFailure {
+      onShowMessage("No browser available to search offers.")
+    }
+  }
+
   val shareProductAction = {
     val lowestOffer = detailState.offers.minByOrNull { it.price }
     val shareBody = buildString {
@@ -294,24 +445,34 @@ fun ProductDetailScreen(
   }
 
   LazyColumn(
+    state = listState,
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .background(MaterialTheme.colorScheme.background)
+      .testTag("product_detail_screen"),
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     item {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+      Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
       ) {
-        IconButton(onClick = onBack) {
-          Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-        }
-        Text("Product Specs & Offers", style = MaterialTheme.typography.titleLarge)
-        IconButton(onClick = shareProductAction) {
-          Icon(Icons.Rounded.Share, contentDescription = "Share product details")
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .background(HeroObsidianEmeraldBrush)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
+          }
+          Text("Product Specs & Offers", style = MaterialTheme.typography.titleLarge, color = Color.White)
+          IconButton(onClick = shareProductAction) {
+            Icon(Icons.Rounded.Share, contentDescription = "Share product details", tint = ElectricLime)
+          }
         }
       }
     }
@@ -324,7 +485,7 @@ fun ProductDetailScreen(
             .padding(32.dp),
           contentAlignment = Alignment.Center,
         ) {
-          CircularProgressIndicator()
+          CircularProgressIndicator(color = EmeraldTrust)
         }
       }
     } else if (product == null) {
@@ -345,7 +506,7 @@ fun ProductDetailScreen(
                 Icon(Icons.Rounded.CloudOff, contentDescription = null, tint = AmberNotice)
                 Text("Network Lookup Unreachable", style = MaterialTheme.typography.titleMedium, color = AmberNotice)
               }
-              Text(detailState.networkError.orEmpty(), style = MaterialTheme.typography.bodySmall)
+              Text(detailState.networkError.orEmpty(), style = MaterialTheme.typography.bodySmall, color = DeepObsidian)
               OutlinedButton(
                 onClick = { productDetailViewModel.load(barcode, market.countryCode) },
                 shape = RoundedCornerShape(12.dp),
@@ -373,9 +534,18 @@ fun ProductDetailScreen(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
+            Surface(color = VioletSoftTint, shape = RoundedCornerShape(8.dp)) {
+              Text(
+                "UNLISTED BARCODE • $barcode",
+                style = MaterialTheme.typography.labelSmall,
+                color = VioletAccent,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+              )
+            }
             Text("Unlisted Barcode: $barcode", style = MaterialTheme.typography.titleLarge)
             Text(
-              "No catalog entry was found. Signed-in users can contribute an unverified community entry below.",
+              "Compare live offers online immediately or contribute an unverified community entry below.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -404,6 +574,22 @@ fun ProductDetailScreen(
               modifier = Modifier.fillMaxWidth(),
             )
             Button(
+              onClick = triggerCompareOffers,
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("compare_offers_button"),
+              shape = RoundedCornerShape(14.dp),
+              colors = ButtonDefaults.buttonColors(
+                containerColor = ElectricLime,
+                contentColor = ObsidianOnLime,
+              ),
+            ) {
+              Icon(Icons.Rounded.CompareArrows, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(8.dp))
+              Text("Compare Offers", fontWeight = FontWeight.Bold)
+            }
+            Button(
               onClick = {
                 if (!isSignedIn) {
                   onSignInRequested()
@@ -425,19 +611,39 @@ fun ProductDetailScreen(
           }
         }
       }
+      if (detailState.hasComparedOffers) {
+        item {
+          OfferComparisonResultsCard(
+            barcode = barcode,
+            productName = barcode,
+            brand = "",
+            detailState = detailState,
+            onOpenOfferDetail = { offerId -> onOpenOfferDetail(barcode, offerId) },
+            onOpenUrl = openWebPriceSearch,
+            onRetryCompare = triggerCompareOffers,
+          )
+        }
+      }
     } else {
       item {
+        val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
         Card(
           shape = RoundedCornerShape(22.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+          border = BorderStroke(1.dp, TealVivid.copy(alpha = 0.35f)),
         ) {
-          Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            // Color-rich Hero Product Strip
             Row(
-              modifier = Modifier.fillMaxWidth(),
+              modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                  Brush.horizontalGradient(
+                    if (isDark) listOf(Color(0xFF0E2B24), Color(0xFF142642)) else listOf(EmeraldSoftTint, CobaltSoftTint),
+                  ),
+                )
+                .padding(16.dp),
               horizontalArrangement = Arrangement.spacedBy(14.dp),
               verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -446,23 +652,23 @@ fun ProductDetailScreen(
                   model = product.imageUrl,
                   contentDescription = product.name,
                   modifier = Modifier
-                    .size(82.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .size(86.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White),
                   contentScale = ContentScale.Crop,
                 )
               } else {
                 Box(
                   modifier = Modifier
-                    .size(82.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .size(86.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Brush.linearGradient(listOf(EmeraldTrust, CobaltInfo))),
                   contentAlignment = Alignment.Center,
                 ) {
-                  Icon(Icons.Rounded.QrCode2, contentDescription = null, modifier = Modifier.size(34.dp))
+                  Icon(Icons.Rounded.QrCode2, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
                 }
               }
-              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 VerificationLabel(statusRaw = product.verificationStatus)
                 Text(product.name, style = MaterialTheme.typography.headlineMedium)
                 Text(
@@ -476,65 +682,156 @@ fun ProductDetailScreen(
               }
             }
 
-            Surface(
-              color = MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(10.dp),
+            Column(
+              modifier = Modifier.padding(18.dp),
+              verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+              Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(10.dp),
               ) {
-                Text("GTIN / Code: ${product.barcode}", style = MaterialTheme.typography.labelMedium)
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text("GTIN / Code: ${product.barcode}", style = MaterialTheme.typography.labelMedium)
+                  Surface(color = EmeraldTrust, shape = RoundedCornerShape(6.dp)) {
+                    Text(
+                      if (detailState.fromOfflineCache) "Offline Cache" else product.dataProvider,
+                      style = MaterialTheme.typography.labelSmall,
+                      color = Color.White,
+                      modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                  }
+                }
+              }
+
+              if (product.description.isNotBlank()) {
+                Text(product.description, style = MaterialTheme.typography.bodyMedium)
+              }
+
+              val meta = detailState.apiMetadata
+              val gradeBadges = buildList {
+                if (meta.quantity.isNotBlank()) add(Triple("Pack: ${meta.quantity}", CobaltSoftTint, CobaltInfo))
+                if (meta.nutriscoreGrade.isNotBlank()) {
+                  val (bg, fg) = scoreBadgeColors(meta.nutriscoreGrade)
+                  add(Triple("Nutri-Score: ${meta.nutriscoreGrade}", bg, fg))
+                }
+                if (meta.ecoscoreGrade.isNotBlank()) {
+                  val (bg, fg) = scoreBadgeColors(meta.ecoscoreGrade)
+                  add(Triple("Eco-Score: ${meta.ecoscoreGrade}", bg, fg))
+                }
+                if (product.countryOfOrigin.isNotBlank()) add(Triple("Origin: ${product.countryOfOrigin}", VioletSoftTint, VioletAccent))
+              }
+              if (gradeBadges.isNotEmpty()) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                  gradeBadges.forEach { (badge, bg, fg) ->
+                    Surface(
+                      color = bg,
+                      shape = RoundedCornerShape(9.dp),
+                      border = BorderStroke(1.dp, fg.copy(alpha = 0.35f)),
+                    ) {
+                      Text(
+                        text = badge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = fg,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                      )
+                    }
+                  }
+                }
+              }
+
+              if (meta.stores.isNotEmpty()) {
                 Text(
-                  if (detailState.fromOfflineCache) "Offline Cache" else product.dataProvider,
-                  style = MaterialTheme.typography.labelSmall,
-                  color = EmeraldTrust,
+                  text = "Known retailers (API): ${meta.stores.take(5).joinToString(", ")}",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
               }
-            }
 
-            if (product.description.isNotBlank()) {
-              Text(product.description, style = MaterialTheme.typography.bodyMedium)
-            }
-            if (product.attributionText.isNotBlank()) {
-              Text(
-                product.attributionText,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-              OutlinedButton(
-                onClick = shareProductAction,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-              ) {
-                Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Share Item")
+              if (product.attributionText.isNotBlank()) {
+                Text(
+                  product.attributionText,
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
               }
+
               Button(
-                onClick = {
-                  if (isSignedIn) onOpenReceiptSubmit(null) else onSignInRequested()
-                },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
+                onClick = triggerCompareOffers,
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(50.dp)
+                  .testTag("compare_offers_button"),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                  containerColor = ElectricLime,
+                  contentColor = ObsidianOnLime,
+                ),
               ) {
-                Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (isSignedIn) "Log Receipt" else "Sign In")
+                Icon(Icons.Rounded.CompareArrows, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                  text = if (detailState.isComparingOffers) "Searching Offers..." else "Compare Offers",
+                  fontWeight = FontWeight.Bold,
+                )
+              }
+
+              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                  onClick = shareProductAction,
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(Modifier.width(6.dp))
+                  Text("Share Item")
+                }
+                Button(
+                  onClick = {
+                    if (isSignedIn) onOpenReceiptSubmit(null) else onSignInRequested()
+                  },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(12.dp),
+                  colors = ButtonDefaults.buttonColors(containerColor = CobaltInfo, contentColor = Color.White),
+                ) {
+                  Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(Modifier.width(6.dp))
+                  Text(if (isSignedIn) "Log Receipt" else "Sign In")
+                }
               }
             }
           }
         }
       }
 
+      if (detailState.hasComparedOffers) {
+        item {
+          OfferComparisonResultsCard(
+            barcode = barcode,
+            productName = product.name,
+            brand = product.brand,
+            detailState = detailState,
+            onOpenOfferDetail = { offerId -> onOpenOfferDetail(barcode, offerId) },
+            onOpenUrl = openWebPriceSearch,
+            onRetryCompare = triggerCompareOffers,
+          )
+        }
+      }
+
       // Eligible Partner Campaigns
       if (mainUiState.campaigns.isNotEmpty()) {
-        item { SectionHeader("Campaign Eligibility (${market.countryCode})") }
+        item { SectionHeader("Campaign Eligibility (${market.countryCode})", accentColor = TangerineAccent) }
         items(mainUiState.campaigns, key = { it.id }) { campaign ->
           val eligibility = CampaignEligibilityEngine.evaluate(
             campaign = campaign,
@@ -545,7 +842,7 @@ fun ProductDetailScreen(
           Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            border = BorderStroke(1.dp, if (eligibility.eligible) EmeraldTrust.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outline),
           ) {
             Row(
               modifier = Modifier
@@ -563,10 +860,13 @@ fun ProductDetailScreen(
                 )
               }
               if (eligibility.eligible) {
-                TextButton(
+                Button(
                   onClick = { if (isSignedIn) onOpenReceiptSubmit(campaign.id) else onSignInRequested() },
+                  shape = RoundedCornerShape(10.dp),
+                  colors = ButtonDefaults.buttonColors(containerColor = EmeraldSoftTint, contentColor = EmeraldTrust),
+                  contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 ) {
-                  Text(if (isSignedIn) "Claim +${campaign.rewardPoints}" else "Sign In")
+                  Text(if (isSignedIn) "Claim +${campaign.rewardPoints}" else "Sign In", fontWeight = FontWeight.Bold)
                 }
               }
             }
@@ -582,6 +882,7 @@ fun ProductDetailScreen(
           onAction = {
             if (isSignedIn) showAddOfferDialog = true else onSignInRequested()
           },
+          accentColor = EmeraldTrust,
         )
       }
 
@@ -688,6 +989,15 @@ fun ProductDetailScreen(
   }
 }
 
+private fun scoreBadgeColors(grade: String): Pair<Color, Color> = when (grade.trim().uppercase()) {
+  "A" -> EmeraldSoftTint to EmeraldTrust
+  "B" -> Color(0xFFECFCCB) to Color(0xFF3F6212)
+  "C" -> AmberSoftTint to AmberNotice
+  "D" -> TangerineSoftTint to TangerineAccent
+  "E" -> CrimsonSoftTint to CrimsonAlert
+  else -> CobaltSoftTint to CobaltInfo
+}
+
 @Composable
 private fun OfferRowCard(
   offer: ProductOffer,
@@ -733,6 +1043,7 @@ private fun OfferRowCard(
           MarketConfig.formatMoney(offer.price, offer.currencyCode),
           style = MaterialTheme.typography.titleLarge,
           color = EmeraldTrust,
+          fontWeight = FontWeight.Bold,
         )
         IconButton(onClick = onShare) {
           Icon(Icons.Rounded.Share, contentDescription = "Share offer", modifier = Modifier.size(18.dp))
@@ -802,7 +1113,7 @@ fun OfferDetailScreen(
       Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(1.dp, EmeraldTrust.copy(alpha = 0.4f)),
       ) {
         Column(
           modifier = Modifier
@@ -845,6 +1156,253 @@ fun OfferDetailScreen(
               Text("Open Merchant Offer Page")
             }
           }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun OfferComparisonResultsCard(
+  barcode: String,
+  productName: String,
+  brand: String,
+  detailState: com.example.ui.viewmodel.ProductDetailUiState,
+  onOpenOfferDetail: (String) -> Unit,
+  onOpenUrl: (String) -> Unit,
+  onRetryCompare: () -> Unit,
+) {
+  val searchQuery = Uri.encode(listOf(brand, productName, barcode).filter { it.isNotBlank() }.joinToString(" "))
+  val googleShoppingUrl = "https://www.google.com/search?tbm=shop&q=$searchQuery"
+  val webPriceSearchUrl = "https://www.google.com/search?q=$searchQuery+price"
+  val openPricesUrl = "https://prices.openfoodfacts.org/products/$barcode"
+
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("offer_comparison_results_card"),
+    shape = RoundedCornerShape(22.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+    border = BorderStroke(1.5.dp, EmeraldTrust.copy(alpha = 0.55f)),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Surface(color = EmeraldSoftTint, shape = RoundedCornerShape(10.dp)) {
+            Icon(
+              Icons.Rounded.CompareArrows,
+              contentDescription = null,
+              tint = EmeraldTrust,
+              modifier = Modifier.padding(6.dp).size(18.dp),
+            )
+          }
+          Column {
+            Text("Price Comparison Search", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+              "Live Open Prices API & Store Offers",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
+        IconButton(onClick = onRetryCompare) {
+          Icon(Icons.Rounded.Refresh, contentDescription = "Refresh price comparison", tint = EmeraldTrust)
+        }
+      }
+
+      if (detailState.isComparingOffers) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+          horizontalArrangement = Arrangement.Center,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = EmeraldTrust)
+          Spacer(Modifier.width(10.dp))
+          Text("Searching Open Prices & store offers...", style = MaterialTheme.typography.bodySmall)
+        }
+      } else {
+        if (detailState.compareNotice != null) {
+          Surface(
+            color = AmberSoftTint,
+            shape = RoundedCornerShape(10.dp),
+          ) {
+            Text(
+              text = detailState.compareNotice,
+              style = MaterialTheme.typography.bodySmall,
+              color = AmberNotice,
+              modifier = Modifier.padding(10.dp),
+            )
+          }
+        }
+
+        if (detailState.comparedOffers.isEmpty()) {
+          Text(
+            text = "No crowd-sourced Open Prices sightings found for barcode $barcode yet. Use the web price search buttons below to compare live retailers.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        } else {
+          val best = detailState.comparedOffers.first()
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(14.dp))
+              .background(Brush.horizontalGradient(listOf(EmeraldTrust, CobaltInfo)))
+              .padding(14.dp),
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text("BEST OBSERVED PRICE", style = MaterialTheme.typography.labelSmall, color = ElectricLime, fontWeight = FontWeight.Bold)
+                Text(best.storeName, style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+              }
+              Text(
+                text = MarketConfig.formatMoney(best.price, best.currencyCode),
+                style = MaterialTheme.typography.titleLarge,
+                color = ElectricLime,
+                fontWeight = FontWeight.Bold,
+              )
+            }
+          }
+
+          detailState.comparedOffers.take(8).forEachIndexed { index, offer ->
+            ComparedOfferItemRow(
+              offer = offer,
+              isBest = index == 0,
+              onClick = {
+                if (offer.firestoreOfferId != null) {
+                  onOpenOfferDetail(offer.firestoreOfferId)
+                } else if (offer.offerUrl.startsWith("http", ignoreCase = true)) {
+                  onOpenUrl(offer.offerUrl)
+                }
+              },
+            )
+          }
+        }
+
+        Text(
+          text = "Search Better Prices Online",
+          style = MaterialTheme.typography.labelLarge,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Button(
+            onClick = { onOpenUrl(googleShoppingUrl) },
+            modifier = Modifier
+              .weight(1f)
+              .testTag("search_google_shopping_button"),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = CobaltInfo, contentColor = Color.White),
+          ) {
+            Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Shopping", maxLines = 1)
+          }
+          Button(
+            onClick = { onOpenUrl(webPriceSearchUrl) },
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = VioletSoftTint, contentColor = VioletAccent),
+          ) {
+            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Web Prices", maxLines = 1)
+          }
+          Button(
+            onClick = { onOpenUrl(openPricesUrl) },
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = EmeraldSoftTint, contentColor = EmeraldTrust),
+          ) {
+            Icon(Icons.Rounded.Storefront, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("OpenPrices", maxLines = 1)
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ComparedOfferItemRow(
+  offer: ComparedOffer,
+  isBest: Boolean,
+  onClick: () -> Unit,
+) {
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick),
+    shape = RoundedCornerShape(12.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    border = BorderStroke(
+      1.dp,
+      if (isBest) EmeraldTrust.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline,
+    ),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(12.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          Text(offer.storeName, style = MaterialTheme.typography.titleSmall)
+          if (isBest) {
+            Surface(color = EmeraldSoftTint, shape = RoundedCornerShape(6.dp)) {
+              Text(
+                "Lowest",
+                style = MaterialTheme.typography.labelSmall,
+                color = EmeraldTrust,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+              )
+            }
+          }
+        }
+        Text(
+          text = listOfNotNull(
+            offer.sourceLabel,
+            offer.locationLabel.takeIf { it.isNotBlank() },
+            offer.observedDate.takeIf { it.isNotBlank() },
+          ).joinToString(" • "),
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      Column(horizontalAlignment = Alignment.End) {
+        Text(
+          text = MarketConfig.formatMoney(offer.price, offer.currencyCode),
+          style = MaterialTheme.typography.titleMedium,
+          color = EmeraldTrust,
+          fontWeight = FontWeight.Bold,
+        )
+        if (offer.isDiscounted && offer.originalPrice != null && offer.originalPrice > offer.price) {
+          Text(
+            text = MarketConfig.formatMoney(offer.originalPrice, offer.currencyCode),
+            style = MaterialTheme.typography.labelSmall.copy(textDecoration = TextDecoration.LineThrough),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
         }
       }
     }

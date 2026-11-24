@@ -42,15 +42,28 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.domain.ShopperMission
+import com.example.ui.theme.CobaltInfo
+import com.example.ui.theme.CobaltSoftTint
+import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricLime
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
+import com.example.ui.theme.SwatchMint
+import com.example.ui.theme.SwatchOrchid
+import com.example.ui.theme.SwatchSky
+import com.example.ui.theme.SwatchSunshine
+import com.example.ui.theme.TangerineAccent
+import com.example.ui.theme.TangerineSoftTint
+import com.example.ui.theme.TealVivid
+import com.example.ui.theme.VioletAccent
+import com.example.ui.theme.VioletSoftTint
 
 @Composable
 fun MissionProgressRing(
@@ -60,6 +73,8 @@ fun MissionProgressRing(
   modifier: Modifier = Modifier,
   ringSize: Dp = 54.dp,
   strokeWidth: Dp = 5.5.dp,
+  accentColor: Color = EmeraldTrust,
+  secondaryAccent: Color = ElectricLime,
   centerLabel: String? = null,
 ) {
   val animatedProgress by animateFloatAsState(
@@ -87,9 +102,7 @@ fun MissionProgressRing(
     1f
   }
 
-  val trackColor = MaterialTheme.colorScheme.surfaceVariant
-  val primaryAccent = MaterialTheme.colorScheme.primary
-  val sweepSecondary = ElectricLime
+  val trackColor = accentColor.copy(alpha = 0.16f)
 
   Box(
     modifier = modifier.size(ringSize),
@@ -113,7 +126,7 @@ fun MissionProgressRing(
       val sweep = 360f * animatedProgress
       if (sweep > 0.5f) {
         drawArc(
-          brush = Brush.sweepGradient(listOf(primaryAccent, sweepSecondary, primaryAccent)),
+          brush = Brush.sweepGradient(listOf(accentColor, secondaryAccent, accentColor)),
           startAngle = -90f,
           sweepAngle = sweep,
           useCenter = false,
@@ -122,9 +135,8 @@ fun MissionProgressRing(
           style = Stroke(width = strokePx, cap = StrokeCap.Round),
         )
       } else {
-        // Subtle minimum progress dot so 0-step missions stay visually grounded
         drawCircle(
-          color = primaryAccent.copy(alpha = 0.45f),
+          color = accentColor.copy(alpha = 0.55f),
           radius = strokePx * 0.48f,
           center = Offset(size.width / 2f, inset),
         )
@@ -133,7 +145,7 @@ fun MissionProgressRing(
 
     if (isCompleted) {
       Surface(
-        color = EmeraldSoftTint,
+        color = accentColor,
         shape = CircleShape,
         modifier = Modifier.size(ringSize - strokeWidth * 2.8f),
       ) {
@@ -141,7 +153,7 @@ fun MissionProgressRing(
           Icon(
             Icons.Rounded.Check,
             contentDescription = "Mission Completed",
-            tint = EmeraldTrust,
+            tint = Color.White,
             modifier = Modifier.size(16.dp),
           )
         }
@@ -151,7 +163,7 @@ fun MissionProgressRing(
         Text(
           text = centerLabel ?: "${(progress * 100).toInt()}%",
           style = MaterialTheme.typography.labelSmall,
-          fontWeight = FontWeight.SemiBold,
+          fontWeight = FontWeight.Bold,
           color = MaterialTheme.colorScheme.onSurface,
         )
         if (progress > 0f) {
@@ -160,7 +172,7 @@ fun MissionProgressRing(
             modifier = Modifier
               .size(4.dp)
               .clip(CircleShape)
-              .background(primaryAccent.copy(alpha = pulseAlpha)),
+              .background(accentColor.copy(alpha = pulseAlpha)),
           )
         }
       }
@@ -187,16 +199,22 @@ fun QuestMissionsSectionCard(
       .testTag("missions_progress_card"),
     shape = RoundedCornerShape(22.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   ) {
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(
+            Brush.horizontalGradient(
+              listOf(
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f),
+              ),
+            ),
+          )
+          .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -205,6 +223,7 @@ fun QuestMissionsSectionCard(
             text = "SHOPPER MISSIONS",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
           )
           Text(
             text = "Progress Milestones ($completedCount/${missions.size})",
@@ -216,35 +235,52 @@ fun QuestMissionsSectionCard(
           progress = totalProgress,
           isCompleted = completedCount == missions.size && missions.isNotEmpty(),
           reducedMotion = reducedMotion,
-          ringSize = 48.dp,
-          strokeWidth = 5.dp,
+          ringSize = 50.dp,
+          strokeWidth = 5.5.dp,
+          accentColor = TealVivid,
+          secondaryAccent = CobaltInfo,
         )
       }
 
-      val rows = missions.chunked(2)
-      rows.forEach { pair ->
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-          pair.forEach { mission ->
-            MissionTile(
-              mission = mission,
-              reducedMotion = reducedMotion,
-              onClick = {
-                if (mission.id == "receipt_check") onOpenReceiptSubmit() else onOpenScan()
-              },
-              modifier = Modifier.weight(1f),
-            )
-          }
-          if (pair.size == 1) {
-            Spacer(modifier = Modifier.weight(1f))
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        val rows = missions.chunked(2)
+        rows.forEach { pair ->
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            pair.forEach { mission ->
+              MissionTile(
+                mission = mission,
+                reducedMotion = reducedMotion,
+                onClick = {
+                  if (mission.id == "receipt_check") onOpenReceiptSubmit() else onOpenScan()
+                },
+                modifier = Modifier.weight(1f),
+              )
+            }
+            if (pair.size == 1) {
+              Spacer(modifier = Modifier.weight(1f))
+            }
           }
         }
       }
     }
   }
 }
+
+private data class MissionPalette(
+  val lightTileTint: Color,
+  val darkTileTint: Color,
+  val border: Color,
+  val accent: Color,
+  val badgeBg: Color,
+)
 
 @Composable
 private fun MissionTile(
@@ -253,20 +289,48 @@ private fun MissionTile(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+  val palette = when (mission.id) {
+    "first_scan" -> MissionPalette(
+      lightTileTint = Color(0xFFE0EEFF),
+      darkTileTint = Color(0xFF13263F),
+      border = CobaltInfo.copy(alpha = if (isDark) 0.55f else 0.35f),
+      accent = if (isDark) Color(0xFF60A5FA) else CobaltInfo,
+      badgeBg = if (isDark) Color(0xFF1B3557) else CobaltSoftTint,
+    )
+    "daily_trio" -> MissionPalette(
+      lightTileTint = Color(0xFFD6F9EA),
+      darkTileTint = Color(0xFF0F2E26),
+      border = EmeraldTrust.copy(alpha = if (isDark) 0.55f else 0.35f),
+      accent = if (isDark) Color(0xFF34D399) else EmeraldTrust,
+      badgeBg = if (isDark) Color(0xFF164336) else EmeraldSoftTint,
+    )
+    "qr_discovery" -> MissionPalette(
+      lightTileTint = Color(0xFFEDE4FF),
+      darkTileTint = Color(0xFF251942),
+      border = VioletAccent.copy(alpha = if (isDark) 0.55f else 0.35f),
+      accent = if (isDark) Color(0xFFA78BFA) else VioletAccent,
+      badgeBg = if (isDark) Color(0xFF332359) else VioletSoftTint,
+    )
+    else -> MissionPalette(
+      lightTileTint = Color(0xFFFFEED2),
+      darkTileTint = Color(0xFF332110),
+      border = TangerineAccent.copy(alpha = if (isDark) 0.55f else 0.35f),
+      accent = if (isDark) Color(0xFFFB923C) else TangerineAccent,
+      badgeBg = if (isDark) Color(0xFF472C15) else TangerineSoftTint,
+    )
+  }
+
   Surface(
     modifier = modifier
       .clip(RoundedCornerShape(16.dp))
       .clickable(onClick = onClick)
       .testTag("mission_tile_${mission.id}"),
-    color = if (mission.isCompleted) {
-      MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-    } else {
-      MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-    },
+    color = if (isDark) palette.darkTileTint else palette.lightTileTint,
     shape = RoundedCornerShape(16.dp),
     border = BorderStroke(
-      1.dp,
-      if (mission.isCompleted) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline,
+      width = if (mission.isCompleted) 1.5.dp else 1.dp,
+      color = palette.border,
     ),
   ) {
     Column(
@@ -284,17 +348,20 @@ private fun MissionTile(
           reducedMotion = reducedMotion,
           ringSize = 46.dp,
           strokeWidth = 4.5.dp,
+          accentColor = palette.accent,
+          secondaryAccent = ElectricLime,
           centerLabel = "${mission.currentStep}/${mission.targetStep}",
         )
         Surface(
-          color = if (mission.isCompleted) EmeraldSoftTint else MaterialTheme.colorScheme.surface,
+          color = if (mission.isCompleted) palette.accent else palette.badgeBg,
           shape = RoundedCornerShape(8.dp),
         ) {
           Text(
             text = if (mission.isCompleted) "Done" else mission.rewardHint,
             style = MaterialTheme.typography.labelSmall,
-            color = if (mission.isCompleted) EmeraldTrust else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+            color = if (mission.isCompleted) Color.White else palette.accent,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -304,6 +371,7 @@ private fun MissionTile(
         Text(
           text = mission.title,
           style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
           color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,

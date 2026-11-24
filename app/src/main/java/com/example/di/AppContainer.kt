@@ -7,6 +7,7 @@ import com.example.auth.CredentialManagerAuth
 import com.example.data.local.AppPreferencesDataStore
 import com.example.data.local.LocalCacheDatabase
 import com.example.data.remote.OpenFoodFactsApi
+import com.example.data.remote.OpenPricesApi
 import com.example.data.repository.AdminRepository
 import com.example.data.repository.ProductRepository
 import com.example.data.repository.ReceiptAndCampaignRepository
@@ -88,12 +89,20 @@ class AppContainer(context: Context) {
     .build()
     .create(OpenFoodFactsApi::class.java)
 
+  private val openPricesApi: OpenPricesApi = Retrofit.Builder()
+    .baseUrl("https://prices.openfoodfacts.org/")
+    .client(okHttpClient)
+    .addConverterFactory(MoshiConverterFactory.create(moshi))
+    .build()
+    .create(OpenPricesApi::class.java)
+
   val credentialAuth = CredentialManagerAuth(auth)
   val scanHistoryRepository = ScanHistoryRepository(localDatabase.scanHistoryDao())
   val productRepository = ProductRepository(
     db = firestore,
     auth = auth,
     api = openFoodFactsApi,
+    openPricesApi = openPricesApi,
     cachedProductDao = localDatabase.cachedProductDao(),
   )
   val userWalletRepository = UserWalletRepository(

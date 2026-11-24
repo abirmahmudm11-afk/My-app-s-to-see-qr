@@ -8,6 +8,7 @@ import com.example.data.model.ProductOffer
 import com.example.data.model.VerificationStatus
 import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.remote.OpenFoodFactsProductDto
+import com.example.data.remote.OpenPricesApi
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -19,8 +20,40 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
+data class ProductApiMetadata(
+  val quantity: String = "",
+  val nutriscoreGrade: String = "",
+  val ecoscoreGrade: String = "",
+  val stores: List<String> = emptyList(),
+  val packaging: String = "",
+)
+
+data class ComparedOffer(
+  val id: String,
+  val storeName: String,
+  val price: Double,
+  val currencyCode: String,
+  val locationLabel: String = "",
+  val observedDate: String = "",
+  val isDiscounted: Boolean = false,
+  val originalPrice: Double? = null,
+  val isVerifiedMerchant: Boolean = false,
+  val sourceLabel: String = "Open Prices (ODbL)",
+  val offerUrl: String = "",
+  val firestoreOfferId: String? = null,
+)
+
+data class OfferComparisonResult(
+  val offers: List<ComparedOffer>,
+  val apiNotice: String? = null,
+)
+
 sealed interface ProductLookupOutcome {
-  data class Found(val product: CatalogProduct, val fromOfflineCache: Boolean) : ProductLookupOutcome
+  data class Found(
+    val product: CatalogProduct,
+    val fromOfflineCache: Boolean,
+    val apiMetadata: ProductApiMetadata = ProductApiMetadata(),
+  ) : ProductLookupOutcome
   data class NotFound(val barcode: String) : ProductLookupOutcome
   data class NetworkError(val barcode: String, val message: String) : ProductLookupOutcome
 }
@@ -35,6 +68,7 @@ class ProductRepository(
   private val db: FirebaseFirestore,
   private val auth: FirebaseAuth,
   private val api: OpenFoodFactsApi,
+  private val openPricesApi: OpenPricesApi,
   private val cachedProductDao: CachedProductDao,
 ) {
   private val safeIdRegex = Regex("^[a-zA-Z0-9_-]+$")
@@ -58,9 +92,11 @@ class ProductRepository(
     }
 
     var remoteFailureMessage: String? = null
+    var remoteMetadata = ProductApiMetadata()
     val remoteProduct = try {
       val response = api.getProductByBarcode(clean)
       if (response.status == 1 && response.product != null) {
+        remoteMetadata = mapApiMetadata(response.product)
         mapOffDto(clean, response.product)
       } else null
     } catch (e: CancellationException) {
@@ -72,7 +108,7 @@ class ProductRepository(
 
     if (remoteProduct != null) {
       cachedProductDao.upsertAll(listOf(CachedProductEntity.fromCatalogProduct(remoteProduct)))
-      return ProductLookupOutcome.Found(remoteProduct, fromOfflineCache = false)
+      return ProductLookupOutcome.Found(remoteProduct, fromOfflineCache = false, apiMetadata = remoteMetadata)
     }
 
     val cached = cachedProductDao.findByBarcode(clean)
@@ -176,6 +212,100 @@ class ProductRepository(
         trySend(items)
       }
     awaitClose { reg.remove() }
+  }
+
+  suspend fun compareOffersForBarcode(barcode: String, countryCode: String): OfferComparisonResult {
+    val clean = barcode.trim()
+    val merged = mutableListOf<ComparedOffer>()
+    var apiNotice: String? = null
+
+    if (auth.currentUser != null && isSafeId(clean)) {
+      val regionOffers = runCatching {
+        db.collection("products_catalog").document(clean)
+          .collection("offers")
+          .whereEqualTo("countryCode", countryCode.uppercase().take(2))
+          .get()
+          .await()
+          .documents
+          .mapNotNull { doc ->
+            doc.toObject(ProductOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+          }
+      }.getOrElse { e ->
+        if (e is CancellationException) throw e
+        emptyList()
+      }
+
+      val globalOffers = runCatching {
+        db.collection("products_catalog").document(clean)
+          .collection("offers")
+          .whereEqualTo("countryCode", "GLOBAL")
+          .get()
+          .await()
+          .documents
+          .mapNotNull { doc ->
+            doc.toObject(ProductOffer::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+          }
+      }.getOrElse { e ->
+        if (e is CancellationException) throw e
+        emptyList()
+      }
+
+      (regionOffers + globalOffers)
+        .distinctBy { it.id }
+        .forEach { offer ->
+          merged.add(
+            ComparedOffer(
+              id = "fs_${offer.id}",
+              storeName = offer.storeName,
+              price = offer.price,
+              currencyCode = offer.currencyCode,
+              locationLabel = offer.countryCode,
+              observedDate = OfferAvailability.fromString(offer.availabilityStatus).label,
+              isVerifiedMerchant = offer.verified,
+              sourceLabel = if (offer.verified) "Verified Store" else "Community Report",
+              offerUrl = offer.offerUrl,
+              firestoreOfferId = offer.id,
+            ),
+          )
+        }
+    }
+
+    try {
+      val response = openPricesApi.getPricesByBarcode(productCode = clean)
+      response.items.forEach { item ->
+        val price = item.price
+        if (price != null && price > 0.0) {
+          val store = item.location?.osmName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Retail Store"
+          val locationParts = listOfNotNull(
+            item.location?.osmAddressCity?.trim()?.takeIf { it.isNotEmpty() },
+            item.location?.osmAddressCountry?.trim()?.takeIf { it.isNotEmpty() },
+          ).joinToString(", ")
+          merged.add(
+            ComparedOffer(
+              id = "op_${item.id}",
+              storeName = store,
+              price = price,
+              currencyCode = item.currency?.uppercase()?.take(3) ?: "EUR",
+              locationLabel = locationParts,
+              observedDate = item.date.orEmpty(),
+              isDiscounted = item.priceIsDiscounted,
+              originalPrice = item.priceWithoutDiscount,
+              isVerifiedMerchant = false,
+              sourceLabel = "Open Prices (ODbL)",
+              offerUrl = "https://prices.openfoodfacts.org/products/$clean",
+            ),
+          )
+        }
+      }
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      apiNotice = "Open Prices live lookup unavailable: ${e.message ?: "network error"}."
+    }
+
+    val sorted = merged.sortedBy { it.price }
+    return OfferComparisonResult(offers = sorted, apiNotice = apiNotice)
   }
 
   suspend fun submitUnverifiedProduct(
@@ -282,10 +412,27 @@ class ProductRepository(
     }
   }
 
+  private fun mapApiMetadata(dto: OpenFoodFactsProductDto): ProductApiMetadata {
+    val storesList = dto.stores
+      ?.split(",")
+      ?.map { it.trim() }
+      ?.filter { it.isNotEmpty() }
+      ?.distinct()
+      .orEmpty()
+    return ProductApiMetadata(
+      quantity = dto.quantity?.trim().orEmpty(),
+      nutriscoreGrade = dto.nutriscoreGrade?.trim()?.uppercase().orEmpty(),
+      ecoscoreGrade = dto.ecoscoreGrade?.trim()?.uppercase().orEmpty(),
+      stores = storesList,
+      packaging = dto.packaging?.trim().orEmpty(),
+    )
+  }
+
   private fun mapOffDto(barcode: String, dto: OpenFoodFactsProductDto): CatalogProduct? {
     val name = dto.productName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val desc = listOfNotNull(
       dto.genericName?.trim()?.takeIf { it.isNotEmpty() },
+      dto.quantity?.trim()?.takeIf { it.isNotEmpty() }?.let { "Size: $it" },
       dto.ingredientsText?.trim()?.takeIf { it.isNotEmpty() }?.let { "Ingredients: $it" },
     ).joinToString("\n")
     return CatalogProduct(

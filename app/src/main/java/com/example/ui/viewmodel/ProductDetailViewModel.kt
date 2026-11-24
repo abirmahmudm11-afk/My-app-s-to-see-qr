@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.CatalogProduct
 import com.example.data.model.ProductOffer
+import com.example.data.repository.ComparedOffer
+import com.example.data.repository.ProductApiMetadata
 import com.example.data.repository.ProductLookupOutcome
 import com.example.di.AppContainer
 import kotlinx.coroutines.Job
@@ -18,9 +20,14 @@ data class ProductDetailUiState(
   val barcode: String = "",
   val isLoading: Boolean = true,
   val product: CatalogProduct? = null,
+  val apiMetadata: ProductApiMetadata = ProductApiMetadata(),
   val fromOfflineCache: Boolean = false,
   val networkError: String? = null,
   val offers: List<ProductOffer> = emptyList(),
+  val isComparingOffers: Boolean = false,
+  val hasComparedOffers: Boolean = false,
+  val comparedOffers: List<ComparedOffer> = emptyList(),
+  val compareNotice: String? = null,
   val feedback: String? = null,
 )
 
@@ -39,6 +46,7 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
           _uiState.value = _uiState.value.copy(
             isLoading = false,
             product = outcome.product,
+            apiMetadata = outcome.apiMetadata,
             fromOfflineCache = outcome.fromOfflineCache,
             networkError = null,
           )
@@ -63,6 +71,32 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
         .collect { offers ->
           _uiState.value = _uiState.value.copy(offers = offers)
         }
+    }
+  }
+
+  fun compareOffers(barcode: String, countryCode: String) {
+    val clean = barcode.trim()
+    if (clean.isEmpty() || _uiState.value.isComparingOffers) return
+    viewModelScope.launch {
+      _uiState.value = _uiState.value.copy(
+        isComparingOffers = true,
+        hasComparedOffers = true,
+        compareNotice = null,
+      )
+      val result = runCatching {
+        container.productRepository.compareOffersForBarcode(clean, countryCode)
+      }.getOrElse { err ->
+        com.example.data.repository.OfferComparisonResult(
+          offers = emptyList(),
+          apiNotice = err.message ?: "Unable to search for offers right now.",
+        )
+      }
+      _uiState.value = _uiState.value.copy(
+        isComparingOffers = false,
+        hasComparedOffers = true,
+        comparedOffers = result.offers,
+        compareNotice = result.apiNotice,
+      )
     }
   }
 

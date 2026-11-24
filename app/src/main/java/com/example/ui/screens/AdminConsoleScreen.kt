@@ -122,7 +122,7 @@ fun AdminConsoleScreen(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(DeepObsidian)
+        .background(com.example.ui.theme.HeroObsidianEmeraldBrush)
         .padding(horizontal = 12.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {

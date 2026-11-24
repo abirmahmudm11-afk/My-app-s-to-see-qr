@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -10,11 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
-import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.QrCodeScanner
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -44,6 +45,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.di.AppContainer
+import com.example.domain.BarcodeValidator
+import com.example.domain.SupportedBarcodeFormat
 import com.example.ui.navigation.Routes
 import com.example.ui.screens.AdminConsoleScreen
 import com.example.ui.screens.AuthScreen
@@ -152,20 +155,18 @@ private fun Scan2MoneyRoot(container: AppContainer) {
           val navBackStackEntry by navController.currentBackStackEntryAsState()
           val currentRoute = navBackStackEntry?.destination?.route
 
-          val tabs = remember(uiState.adminRole) {
-            buildList {
-              add(BottomTab(Routes.HOME, "Home", Icons.Rounded.Home))
-              add(BottomTab(Routes.DISCOVER, "Discover", Icons.Rounded.Search))
-              add(BottomTab(Routes.SCAN, "Scan", Icons.Rounded.QrCodeScanner))
-              add(BottomTab(Routes.REWARDS, "Rewards", Icons.Rounded.AccountBalanceWallet))
-              if (uiState.adminRole != null) {
-                add(BottomTab(Routes.ADMIN_CONSOLE, "Admin", Icons.Rounded.AdminPanelSettings))
-              } else {
-                add(BottomTab(Routes.PROFILE, "Profile", Icons.Rounded.Person))
-              }
-            }
+          val tabs = remember {
+            listOf(
+              BottomTab(Routes.HOME, "Home", Icons.Rounded.Home),
+              BottomTab(Routes.SCAN, "Scan", Icons.Rounded.QrCodeScanner),
+              BottomTab(Routes.SCAN_HISTORY, "History", Icons.Rounded.History),
+              BottomTab(Routes.REWARDS, "Rewards", Icons.Rounded.AccountBalanceWallet),
+              BottomTab(Routes.PROFILE, "Profile", Icons.Rounded.Person),
+            )
           }
-          val showBottomBar = currentRoute in tabs.map { it.route } || currentRoute == Routes.PROFILE
+          val showBottomBar = currentRoute in tabs.map { it.route } ||
+            currentRoute == Routes.DISCOVER ||
+            currentRoute == Routes.ADMIN_CONSOLE
 
           val navigateTopLevel: (String) -> Unit = { route ->
             navController.navigate(route) {
@@ -181,22 +182,38 @@ private fun Scan2MoneyRoot(container: AppContainer) {
             snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
               if (showBottomBar) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                  tabs.forEach { tab ->
-                    val selected = currentRoute == tab.route
-                    NavigationBarItem(
-                      selected = selected,
-                      onClick = { navigateTopLevel(tab.route) },
-                      icon = { Icon(tab.icon, contentDescription = tab.label) },
-                      label = { Text(tab.label) },
-                      colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = ObsidianOnLime,
-                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                        indicatorColor = ElectricLime,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                      ),
-                    )
+                androidx.compose.foundation.layout.Column {
+                  androidx.compose.material3.HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                    thickness = androidx.compose.ui.unit.Dp.Hairline,
+                  )
+                  NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = androidx.compose.ui.unit.Dp(0f),
+                  ) {
+                    tabs.forEach { tab ->
+                      val selected = currentRoute == tab.route
+                      NavigationBarItem(
+                        selected = selected,
+                        onClick = { navigateTopLevel(tab.route) },
+                        icon = { Icon(tab.icon, contentDescription = tab.label) },
+                        label = {
+                          Text(
+                            tab.label,
+                            maxLines = 1,
+                            fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
+                          )
+                        },
+                        modifier = Modifier.testTag("nav_tab_${tab.label.lowercase()}"),
+                        colors = NavigationBarItemDefaults.colors(
+                          selectedIconColor = ObsidianOnLime,
+                          selectedTextColor = MaterialTheme.colorScheme.primary,
+                          indicatorColor = ElectricLime,
+                          unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                          unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    }
                   }
                 }
               }
@@ -222,7 +239,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                 onOpenReceiptSubmit = { campId -> navController.navigate(Routes.receiptSubmit(campId)) },
                 onOpenProduct = { barcode -> navController.navigate(Routes.productDetail(barcode)) },
                 onOpenNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
-                onOpenScanHistory = { navController.navigate(Routes.SCAN_HISTORY) },
+                onOpenScanHistory = { navigateTopLevel(Routes.SCAN_HISTORY) },
                 onOpenAdmin = { navController.navigate(Routes.ADMIN_CONSOLE) },
                 onSignInRequested = { forceAuthModal = true },
               )
@@ -244,7 +261,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                 reducedMotion = uiState.preferences.reducedMotionEnabled,
                 onClearScanContext = { mainViewModel.clearScanContext() },
                 onOpenProductDetail = { barcode -> navController.navigate(Routes.productDetail(barcode)) },
-                onOpenHistory = { navController.navigate(Routes.SCAN_HISTORY) },
+                onOpenHistory = { navigateTopLevel(Routes.SCAN_HISTORY) },
                 onOpenRewardsOrPromo = { campHint ->
                   if (!campHint.isNullOrBlank()) {
                     navController.navigate(Routes.receiptSubmit(campHint))
@@ -272,7 +289,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
             composable(Routes.PROFILE) {
               ProfileScreen(
                 uiState = uiState,
-                onOpenScanHistory = { navController.navigate(Routes.SCAN_HISTORY) },
+                onOpenScanHistory = { navigateTopLevel(Routes.SCAN_HISTORY) },
                 onOpenNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
                 onOpenCountryLanguage = { navController.navigate(Routes.COUNTRY_LANGUAGE) },
                 onOpenPrivacy = { navController.navigate(Routes.PRIVACY_SETTINGS) },
@@ -360,8 +377,31 @@ private fun Scan2MoneyRoot(container: AppContainer) {
             composable(Routes.SCAN_HISTORY) {
               ScanHistoryScreen(
                 uiState = uiState,
+                isTopLevelTab = true,
                 onBack = { navController.popBackStack() },
-                onOpenProduct = { barcode -> navController.navigate(Routes.productDetail(barcode)) },
+                onOpenDiscover = { navController.navigate(Routes.DISCOVER) },
+                onOpenScanItem = { scan ->
+                  when (val qr = BarcodeValidator.classifyQrPayload(scan.barcodeValue, SupportedBarcodeFormat.QR_CODE)) {
+                    is BarcodeValidator.QrPayloadResolution.WebUrl -> {
+                      if (!qr.embeddedBarcode.isNullOrBlank()) {
+                        navController.navigate(Routes.productDetail(qr.embeddedBarcode))
+                      } else {
+                        runCatching {
+                          activityContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(qr.url)))
+                        }.onFailure {
+                          mainViewModel.showFeedback("No browser available to open URL.")
+                        }
+                      }
+                    }
+                    is BarcodeValidator.QrPayloadResolution.PromoCode -> {
+                      mainViewModel.showFeedback("Promo '${qr.code}' selected.")
+                      navController.navigate(Routes.receiptSubmit(qr.campaignHint))
+                    }
+                    BarcodeValidator.QrPayloadResolution.ProductBarcode -> {
+                      navController.navigate(Routes.productDetail(scan.barcodeValue))
+                    }
+                  }
+                },
                 onRescan = { scanContext ->
                   mainViewModel.setScanContext(scanContext)
                   navigateTopLevel(Routes.SCAN)

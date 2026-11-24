@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,15 +51,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.R
 import com.example.data.model.PayoutMethod
 import com.example.data.model.PayoutStatus
 import com.example.data.model.RewardTransaction
@@ -68,6 +76,7 @@ import com.example.ui.components.ReceiptStatusBadge
 import com.example.ui.components.SandboxCashbackBanner
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.formatTimestamp
+import com.example.ui.theme.AmberGold
 import com.example.ui.theme.AmberNotice
 import com.example.ui.theme.AmberSoftTint
 import com.example.ui.theme.CobaltInfo
@@ -78,9 +87,14 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricLime
 import com.example.ui.theme.EmeraldSoftTint
 import com.example.ui.theme.EmeraldTrust
-import com.example.ui.theme.ObsidianElevated
+import com.example.ui.theme.HeaderWarmRewardsBrush
+import com.example.ui.theme.HeroObsidianEmeraldBrush
 import com.example.ui.theme.ObsidianMutedText
 import com.example.ui.theme.ObsidianOnLime
+import com.example.ui.theme.TangerineAccent
+import com.example.ui.theme.TangerineSoftTint
+import com.example.ui.theme.VioletAccent
+import com.example.ui.theme.VioletSoftTint
 import com.example.ui.viewmodel.MainUiState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -122,10 +136,50 @@ fun RewardsScreen(
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
+    // Rich Gradient Rewards Banner + Illustrated Badge
     item {
-      Text("Rewards & Payouts", style = MaterialTheme.typography.headlineMedium)
-      Spacer(Modifier.height(6.dp))
-      SandboxCashbackBanner()
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Card(
+          shape = RoundedCornerShape(22.dp),
+          colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(HeaderWarmRewardsBrush)
+              .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+          ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Surface(color = ElectricLime, shape = RoundedCornerShape(8.dp)) {
+                Text(
+                  "AUDITED POINT WALLET",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = ObsidianOnLime,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+              }
+              Text("Rewards & Payouts", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+              Text(
+                "Earn PTS from verified receipts & redeem fee-free sandbox vouchers.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.86f),
+              )
+            }
+            Image(
+              painter = painterResource(id = R.drawable.img_wallet_trophy),
+              contentDescription = "Rewards wallet illustration",
+              modifier = Modifier
+                .size(68.dp)
+                .clip(RoundedCornerShape(16.dp)),
+              contentScale = ContentScale.Crop,
+            )
+          }
+        }
+        SandboxCashbackBanner()
+      }
     }
 
     if (!isSignedIn) {
@@ -142,19 +196,21 @@ fun RewardsScreen(
       )
     }
 
-    // Obsidian Wallet Summary Card with Payout Trigger
+    // Obsidian-Emerald Gradient Wallet Summary Card with Payout Trigger
     item {
       Card(
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = DeepObsidian),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.35f)),
       ) {
         Column(
           modifier = Modifier
             .fillMaxWidth()
+            .background(HeroObsidianEmeraldBrush)
             .padding(20.dp),
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          Text("WALLET LEDGER SUMMARY", style = MaterialTheme.typography.labelSmall, color = ElectricLime)
+          Text("WALLET LEDGER SUMMARY", style = MaterialTheme.typography.labelSmall, color = ElectricLime, fontWeight = FontWeight.Bold)
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -164,7 +220,7 @@ fun RewardsScreen(
               Text("Available balance", style = MaterialTheme.typography.bodySmall, color = ObsidianMutedText)
             }
             Column(horizontalAlignment = Alignment.End) {
-              Text("${uiState.wallet.pendingPoints} PTS", style = MaterialTheme.typography.titleLarge, color = Color.White)
+              Text("${uiState.wallet.pendingPoints} PTS", style = MaterialTheme.typography.titleLarge, color = AmberGold)
               Text("Pending review", style = MaterialTheme.typography.bodySmall, color = ObsidianMutedText)
             }
           }
@@ -172,13 +228,21 @@ fun RewardsScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Surface(modifier = Modifier.weight(1f), color = ObsidianElevated, shape = RoundedCornerShape(10.dp)) {
+            Surface(
+              modifier = Modifier.weight(1f),
+              color = Color.White.copy(alpha = 0.11f),
+              shape = RoundedCornerShape(12.dp),
+            ) {
               Column(Modifier.padding(10.dp)) {
                 Text("${uiState.wallet.redeemedPoints} PTS", style = MaterialTheme.typography.titleMedium, color = EmeraldSoftTint)
                 Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
               }
             }
-            Surface(modifier = Modifier.weight(1f), color = ObsidianElevated, shape = RoundedCornerShape(10.dp)) {
+            Surface(
+              modifier = Modifier.weight(1f),
+              color = Color.White.copy(alpha = 0.11f),
+              shape = RoundedCornerShape(12.dp),
+            ) {
               Column(Modifier.padding(10.dp)) {
                 Text("100 PTS", style = MaterialTheme.typography.titleMedium, color = ElectricLime)
                 Text("Payout minimum ($0 fee)", style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
@@ -190,13 +254,14 @@ fun RewardsScreen(
               onClick = { onSubmitReceipt(null) },
               modifier = Modifier
                 .weight(1f)
+                .height(48.dp)
                 .testTag("rewards_log_receipt_button"),
               shape = RoundedCornerShape(14.dp),
               colors = ButtonDefaults.buttonColors(containerColor = ElectricLime, contentColor = ObsidianOnLime),
             ) {
               Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
               Spacer(Modifier.width(6.dp))
-              Text("Log Receipt")
+              Text("Log Receipt", fontWeight = FontWeight.Bold)
             }
             OutlinedButton(
               onClick = {
@@ -208,9 +273,11 @@ fun RewardsScreen(
               },
               modifier = Modifier
                 .weight(1f)
+                .height(48.dp)
                 .testTag("rewards_request_payout_button"),
               shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.55f)),
+              border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.6f)),
+              colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White.copy(alpha = 0.10f)),
             ) {
               Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = ElectricLime, modifier = Modifier.size(18.dp))
               Spacer(Modifier.width(6.dp))
@@ -221,14 +288,21 @@ fun RewardsScreen(
       }
     }
 
-    // Quick Vouchers
-    item { SectionHeader("Redeem Sandbox Vouchers") }
-    items(vouchers) { (title, cost, subtitle) ->
+    // Color-Coded Quick Vouchers
+    item { SectionHeader("Redeem Sandbox Vouchers", accentColor = EmeraldTrust) }
+    items(vouchers.size) { index ->
+      val (title, cost, subtitle) = vouchers[index]
       val hasBalance = uiState.wallet.availablePoints >= cost
+      val (iconBg, iconTint) = when (index) {
+        0 -> EmeraldSoftTint to EmeraldTrust
+        1 -> TangerineSoftTint to TangerineAccent
+        else -> VioletSoftTint to VioletAccent
+      }
       Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, iconTint.copy(alpha = 0.28f)),
       ) {
         Row(
           modifier = Modifier
@@ -240,9 +314,11 @@ fun RewardsScreen(
           Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            Icon(Icons.Rounded.CardGiftcard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Surface(color = iconBg, shape = RoundedCornerShape(12.dp)) {
+              Icon(Icons.Rounded.CardGiftcard, contentDescription = null, tint = iconTint, modifier = Modifier.padding(10.dp).size(22.dp))
+            }
             Column {
               Text(title, style = MaterialTheme.typography.titleMedium)
               Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -255,21 +331,24 @@ fun RewardsScreen(
             },
             enabled = !isSignedIn || hasBalance,
             shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = iconTint, contentColor = Color.White),
           ) {
-            Text(if (!isSignedIn) "Sign In" else "$cost PTS")
+            Text(if (!isSignedIn) "Sign In" else "$cost PTS", fontWeight = FontWeight.Bold)
           }
         }
       }
     }
 
     // Payout Requests Queue
-    item { SectionHeader("My Payout Requests (${uiState.payoutRequests.size})") }
+    item { SectionHeader("My Payout Requests (${uiState.payoutRequests.size})", accentColor = CobaltInfo) }
     if (uiState.payoutRequests.isEmpty()) {
       item {
-        Text(
-          "No payout requests yet. Once you reach 100 PTS, submit a payout or voucher request for admin fulfillment.",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        StyledEmptySectionCard(
+          icon = Icons.Rounded.AccountBalance,
+          iconBg = CobaltSoftTint,
+          iconTint = CobaltInfo,
+          title = "No payout requests yet",
+          body = "Once you reach 100 PTS, submit a payout or voucher request for human admin fulfillment.",
         )
       }
     } else {
@@ -315,13 +394,15 @@ fun RewardsScreen(
     }
 
     // Submitted Receipts Queue
-    item { SectionHeader("Receipt Submissions (${uiState.receipts.size})") }
+    item { SectionHeader("Receipt Submissions (${uiState.receipts.size})", accentColor = TangerineAccent) }
     if (uiState.receipts.isEmpty()) {
       item {
-        Text(
-          "No receipts submitted yet. Every receipt is SHA-256 hashed to prevent duplicate claims.",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        StyledEmptySectionCard(
+          icon = Icons.AutoMirrored.Rounded.ReceiptLong,
+          iconBg = TangerineSoftTint,
+          iconTint = TangerineAccent,
+          title = "No receipts submitted yet",
+          body = "Every receipt generates a SHA-256 fingerprint to prevent duplicate claims.",
         )
       }
     } else {
@@ -354,13 +435,15 @@ fun RewardsScreen(
     }
 
     // Point Ledger History
-    item { SectionHeader("Point Ledger (${uiState.transactions.size})") }
+    item { SectionHeader("Point Ledger (${uiState.transactions.size})", accentColor = VioletAccent) }
     if (uiState.transactions.isEmpty()) {
       item {
-        Text(
-          "Ledger transactions will appear once a receipt or payout is processed.",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        StyledEmptySectionCard(
+          icon = Icons.Rounded.Stars,
+          iconBg = VioletSoftTint,
+          iconTint = VioletAccent,
+          title = "Ledger awaiting first transaction",
+          body = "Audited ledger entries will appear here once a receipt or payout is processed.",
         )
       }
     } else {
@@ -441,6 +524,37 @@ fun RewardsScreen(
 }
 
 @Composable
+private fun StyledEmptySectionCard(
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  iconBg: Color,
+  iconTint: Color,
+  title: String,
+  body: String,
+) {
+  Card(
+    shape = RoundedCornerShape(18.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    border = BorderStroke(1.dp, iconTint.copy(alpha = 0.25f)),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(14.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Surface(color = iconBg, shape = RoundedCornerShape(12.dp)) {
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.padding(10.dp).size(20.dp))
+      }
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+    }
+  }
+}
+
+@Composable
 private fun RewardTierProgressGauge(
   availablePoints: Long,
   reducedMotion: Boolean,
@@ -473,39 +587,46 @@ private fun RewardTierProgressGauge(
 
   val remaining = (nextTier.thresholdPts - availablePoints).coerceAtLeast(0L)
   val percentLabel = "${(rawProgress * 100f).toInt()}%"
+  val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
   Card(
     shape = RoundedCornerShape(22.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    border = BorderStroke(1.dp, CobaltInfo.copy(alpha = 0.3f)),
   ) {
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(18.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(
+            Brush.horizontalGradient(
+              if (isDark) listOf(Color(0xFF13263F), Color(0xFF102E26)) else listOf(CobaltSoftTint, EmeraldSoftTint),
+            ),
+          )
+          .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Column {
-          Text("NEXT REWARD THRESHOLD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+          Text("NEXT REWARD THRESHOLD", style = MaterialTheme.typography.labelSmall, color = CobaltInfo, fontWeight = FontWeight.Bold)
           Text(nextTier.title, style = MaterialTheme.typography.titleLarge)
         }
-        Surface(color = CobaltSoftTint, shape = RoundedCornerShape(8.dp)) {
+        Surface(color = CobaltInfo, shape = RoundedCornerShape(8.dp)) {
           Text(
             text = "${nextTier.thresholdPts} PTS Goal",
             style = MaterialTheme.typography.labelSmall,
-            color = CobaltInfo,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
           )
         }
       }
 
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
       ) {
@@ -513,10 +634,10 @@ private fun RewardTierProgressGauge(
           modifier = Modifier.size(124.dp),
           contentAlignment = Alignment.Center,
         ) {
-          val trackColor = MaterialTheme.colorScheme.surfaceVariant
-          val primaryTeal = MaterialTheme.colorScheme.primary
+          val trackColor = CobaltInfo.copy(alpha = 0.14f)
+          val primaryTeal = EmeraldTrust
           Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokePx = 12.dp.toPx()
+            val strokePx = 13.dp.toPx()
             val inset = strokePx / 2f
             val arcSize = Size(size.width - strokePx, size.height - strokePx)
             val startAngle = 135f
@@ -533,9 +654,9 @@ private fun RewardTierProgressGauge(
             )
 
             drawArc(
-              brush = Brush.sweepGradient(listOf(primaryTeal, ElectricLime, primaryTeal)),
+              brush = Brush.sweepGradient(listOf(CobaltInfo, primaryTeal, ElectricLime, AmberGold)),
               startAngle = startAngle,
-              sweepAngle = totalSweep * animatedProgress.coerceAtLeast(0.02f),
+              sweepAngle = totalSweep * animatedProgress.coerceAtLeast(0.03f),
               useCenter = false,
               topLeft = Offset(inset, inset),
               size = arcSize,
@@ -544,7 +665,7 @@ private fun RewardTierProgressGauge(
           }
 
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(percentLabel, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            Text(percentLabel, style = MaterialTheme.typography.headlineMedium, color = CobaltInfo, fontWeight = FontWeight.Bold)
             Text("${availablePoints}p", style = MaterialTheme.typography.labelSmall)
           }
         }
@@ -563,14 +684,15 @@ private fun RewardTierProgressGauge(
             tiers.forEach { tier ->
               val reached = availablePoints >= tier.thresholdPts
               Surface(
-                color = if (reached) EmeraldSoftTint else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(6.dp),
+                color = if (reached) EmeraldTrust else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(7.dp),
               ) {
                 Text(
                   text = "${tier.thresholdPts}",
                   style = MaterialTheme.typography.labelSmall,
-                  color = if (reached) EmeraldTrust else MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                  color = if (reached) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                 )
               }
             }
@@ -610,6 +732,7 @@ private fun TransactionRowCard(tx: RewardTransaction, onClick: () -> Unit) {
         text = "${if (isCredit) "+" else "-"}${tx.amount} PTS",
         style = MaterialTheme.typography.titleMedium,
         color = if (isCredit) EmeraldTrust else CrimsonAlert,
+        fontWeight = FontWeight.Bold,
       )
     }
   }
@@ -649,11 +772,22 @@ fun ReceiptSubmissionScreen(
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) {
-          Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+      Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .background(HeroObsidianEmeraldBrush)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
+          }
+          Text("Submit Receipt (1–3 min)", style = MaterialTheme.typography.titleLarge, color = Color.White)
         }
-        Text("Submit Receipt (1–3 min)", style = MaterialTheme.typography.titleLarge)
       }
     }
 
@@ -661,6 +795,7 @@ fun ReceiptSubmissionScreen(
       Surface(
         color = EmeraldSoftTint,
         shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, EmeraldTrust.copy(alpha = 0.35f)),
       ) {
         Row(
           modifier = Modifier.padding(12.dp),
@@ -766,8 +901,9 @@ fun ReceiptSubmissionScreen(
               .height(52.dp)
               .testTag("submit_receipt_button"),
             shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = EmeraldTrust, contentColor = Color.White),
           ) {
-            Text(if (!isSignedIn) "Sign In with Google to Submit" else "Submit for Review")
+            Text(if (!isSignedIn) "Sign In with Google to Submit" else "Submit for Review", fontWeight = FontWeight.Bold)
           }
         }
       }

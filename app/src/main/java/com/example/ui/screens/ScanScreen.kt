@@ -167,6 +167,24 @@ fun ScanScreen(
     }
   }
 
+  LaunchedEffect(uiState) {
+    when (val state = uiState) {
+      is ScannerUiState.Matched -> {
+        delay(220L)
+        val code = state.barcode
+        scannerViewModel.resetScanner()
+        onOpenProductDetail(code)
+      }
+      is ScannerUiState.NotFound -> {
+        delay(220L)
+        val code = state.barcode
+        scannerViewModel.resetScanner()
+        onOpenProductDetail(code)
+      }
+      else -> Unit
+    }
+  }
+
   val permissionLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.RequestPermission(),
   ) { granted ->
@@ -774,29 +792,32 @@ fun ScanScreen(
 
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text("Sample:", style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
-        listOf(
-          Triple("3017620422003", "Nutella", SupportedBarcodeFormat.EAN_13),
-          Triple("https://world.openfoodfacts.org/product/5449000000996", "QR URL", SupportedBarcodeFormat.QR_CODE),
-          Triple("PROMO:BONUS100", "QR Promo", SupportedBarcodeFormat.QR_CODE),
-        ).forEach { (code, label, fmt) ->
+        val sampleSpecs = listOf(
+          Triple("3017620422003", "Nutella", SupportedBarcodeFormat.EAN_13) to ElectricLime,
+          Triple("https://world.openfoodfacts.org/product/5449000000996", "QR URL", SupportedBarcodeFormat.QR_CODE) to Color(0xFF60A5FA),
+          Triple("PROMO:BONUS100", "QR Promo", SupportedBarcodeFormat.QR_CODE) to Color(0xFFFBBF24),
+        )
+        sampleSpecs.forEach { (triple, pillTint) ->
+          val (code, label, fmt) = triple
           Surface(
             modifier = Modifier
               .clickable {
                 scannerViewModel.processScannedBarcode(code, fmt, fromCamera = false)
               }
               .testTag("sample_scan_$label"),
-            color = ObsidianElevated,
+            color = pillTint.copy(alpha = 0.18f),
             shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, pillTint.copy(alpha = 0.45f)),
           ) {
             Text(
               text = label,
               style = MaterialTheme.typography.labelSmall,
-              color = ElectricLime,
-              modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+              color = pillTint,
+              modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
             )
           }
         }

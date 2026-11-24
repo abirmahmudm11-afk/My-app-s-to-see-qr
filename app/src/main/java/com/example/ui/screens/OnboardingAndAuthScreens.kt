@@ -506,11 +506,15 @@ fun AuthScreen(
     }
 
     Card(
-      shape = RoundedCornerShape(22.dp),
-      colors = CardDefaults.cardColors(containerColor = DeepObsidian),
+      shape = RoundedCornerShape(24.dp),
+      colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+      border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.35f)),
     ) {
       Column(
-        modifier = Modifier.padding(20.dp),
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(com.example.ui.theme.HeroObsidianEmeraldBrush)
+          .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Surface(
@@ -533,9 +537,9 @@ fun AuthScreen(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          AuthAnchorMetric(value = "< 2s", label = "Catalog lookup", modifier = Modifier.weight(1f))
-          AuthAnchorMetric(value = "1–3m", label = "Receipt log", modifier = Modifier.weight(1f))
-          AuthAnchorMetric(value = "100p", label = "Payout start", modifier = Modifier.weight(1f))
+          AuthAnchorMetric(value = "< 2s", label = "Catalog lookup", accent = Color(0xFF38BDF8), modifier = Modifier.weight(1f))
+          AuthAnchorMetric(value = "1–3m", label = "Receipt log", accent = Color(0xFFFBBF24), modifier = Modifier.weight(1f))
+          AuthAnchorMetric(value = "100p", label = "Payout start", accent = ElectricLime, modifier = Modifier.weight(1f))
         }
       }
     }
@@ -553,10 +557,14 @@ fun AuthScreen(
         AuthModeRow(
           title = "Google Account (Recommended)",
           detail = "Cloud Firestore wallet, SHA-256 receipt submission, campaign rewards & cross-device scan sync.",
+          badgeBg = com.example.ui.theme.CobaltSoftTint,
+          badgeFg = com.example.ui.theme.CobaltInfo,
         )
         AuthModeRow(
           title = "Guest Local Scanner Mode",
           detail = "Instant 13-format barcode & QR scanning, Open Food Facts catalog search, local Room scan history & missions.",
+          badgeBg = com.example.ui.theme.VioletSoftTint,
+          badgeFg = com.example.ui.theme.VioletAccent,
         )
       }
     }
@@ -570,15 +578,15 @@ fun AuthScreen(
         .testTag("google_sign_in_button"),
       shape = RoundedCornerShape(16.dp),
       colors = ButtonDefaults.buttonColors(
-        containerColor = DeepObsidian,
-        contentColor = ElectricLime,
+        containerColor = EmeraldTrust,
+        contentColor = Color.White,
       ),
     ) {
       if (isSigningIn) {
         CircularProgressIndicator(
           modifier = Modifier.size(18.dp),
           strokeWidth = 2.dp,
-          color = ElectricLime,
+          color = Color.White,
         )
         Spacer(Modifier.width(10.dp))
         Text("Connecting Google Account...")
@@ -597,28 +605,39 @@ fun AuthScreen(
         .height(50.dp)
         .testTag("continue_guest_button"),
       shape = RoundedCornerShape(16.dp),
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+      border = BorderStroke(1.dp, com.example.ui.theme.CobaltInfo.copy(alpha = 0.45f)),
+      colors = ButtonDefaults.outlinedButtonColors(
+        containerColor = com.example.ui.theme.CobaltSoftTint.copy(alpha = 0.55f),
+        contentColor = DeepObsidian,
+      ),
     ) {
-      Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+      Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = com.example.ui.theme.CobaltInfo)
       Spacer(Modifier.width(8.dp))
-      Text("Explore Scanner in Guest Mode", style = MaterialTheme.typography.labelLarge)
+      Text("Explore Scanner in Guest Mode", style = MaterialTheme.typography.labelLarge, color = com.example.ui.theme.CobaltInfo)
     }
   }
 }
 
 @Composable
-private fun AuthModeRow(title: String, detail: String) {
+private fun AuthModeRow(
+  title: String,
+  detail: String,
+  badgeBg: Color,
+  badgeFg: Color,
+) {
   Row(
     modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.spacedBy(10.dp),
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
     verticalAlignment = Alignment.Top,
   ) {
-    Icon(
-      Icons.Rounded.CheckCircle,
-      contentDescription = null,
-      tint = EmeraldTrust,
-      modifier = Modifier.size(18.dp).padding(top = 2.dp),
-    )
+    Surface(color = badgeBg, shape = RoundedCornerShape(10.dp)) {
+      Icon(
+        Icons.Rounded.CheckCircle,
+        contentDescription = null,
+        tint = badgeFg,
+        modifier = Modifier.padding(7.dp).size(18.dp),
+      )
+    }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
       Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
       Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -627,14 +646,20 @@ private fun AuthModeRow(title: String, detail: String) {
 }
 
 @Composable
-private fun AuthAnchorMetric(value: String, label: String, modifier: Modifier = Modifier) {
+private fun AuthAnchorMetric(
+  value: String,
+  label: String,
+  accent: Color,
+  modifier: Modifier = Modifier,
+) {
   Surface(
     modifier = modifier,
     shape = RoundedCornerShape(12.dp),
-    color = ObsidianElevated,
+    color = Color.White.copy(alpha = 0.12f),
+    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
   ) {
     Column(modifier = Modifier.padding(10.dp)) {
-      Text(value, style = MaterialTheme.typography.titleLarge, color = ElectricLime)
+      Text(value, style = MaterialTheme.typography.titleLarge, color = accent)
       Text(label, style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
     }
   }

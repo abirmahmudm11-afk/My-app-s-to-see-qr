@@ -184,12 +184,10 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
               imageUrl = "",
               sourceProvider = "Network Pending",
               verificationStatus = VerificationStatus.UNKNOWN.name,
-              scanResult = "NETWORK_ERROR",
+              scanResult = "NOT_FOUND",
             )
           }
-          _uiState.value = ScannerUiState.Error(
-            "Network lookup failed for $barcode: ${outcome.message}. Saved to Scan History for later lookup.",
-          )
+          _uiState.value = ScannerUiState.NotFound(barcode, format)
         }
         is ProductLookupOutcome.NotFound, null -> {
           runCatching {
