@@ -168,6 +168,8 @@ class UserWalletRepository(
     sourceProvider: String,
     verificationStatus: String,
     scanResult: String,
+    quantity: String = "",
+    nutriscoreGrade: String = "",
   ) {
     val uid = auth.currentUser?.uid
     scanHistoryRepository.saveScan(
@@ -183,6 +185,8 @@ class UserWalletRepository(
       verificationStatus = verificationStatus,
       scanResult = scanResult,
       scannedAtMs = System.currentTimeMillis(),
+      quantity = quantity,
+      nutriscoreGrade = nutriscoreGrade,
     )
 
     if (uid != null) {

@@ -27,6 +27,7 @@ data class ProductDetailUiState(
   val isComparingOffers: Boolean = false,
   val hasComparedOffers: Boolean = false,
   val comparedOffers: List<ComparedOffer> = emptyList(),
+  val includesSimulatedRetailers: Boolean = false,
   val compareNotice: String? = null,
   val feedback: String? = null,
 )
@@ -41,8 +42,12 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
     val clean = barcode.trim()
     _uiState.value = ProductDetailUiState(barcode = clean, isLoading = true)
     viewModelScope.launch {
+      var resolvedName = ""
+      var resolvedBrand = ""
       when (val outcome = runCatching { container.productRepository.lookupByBarcode(clean) }.getOrNull()) {
         is ProductLookupOutcome.Found -> {
+          resolvedName = outcome.product.name
+          resolvedBrand = outcome.product.brand
           _uiState.value = _uiState.value.copy(
             isLoading = false,
             product = outcome.product,
@@ -62,6 +67,7 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
           _uiState.value = _uiState.value.copy(isLoading = false, product = null, networkError = null)
         }
       }
+      compareOffers(clean, countryCode, resolvedName, resolvedBrand)
     }
 
     offersJob?.cancel()
@@ -74,7 +80,12 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
     }
   }
 
-  fun compareOffers(barcode: String, countryCode: String) {
+  fun compareOffers(
+    barcode: String,
+    countryCode: String,
+    productName: String = _uiState.value.product?.name.orEmpty(),
+    brand: String = _uiState.value.product?.brand.orEmpty(),
+  ) {
     val clean = barcode.trim()
     if (clean.isEmpty() || _uiState.value.isComparingOffers) return
     viewModelScope.launch {
@@ -84,7 +95,12 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
         compareNotice = null,
       )
       val result = runCatching {
-        container.productRepository.compareOffersForBarcode(clean, countryCode)
+        container.productRepository.compareOffersForBarcode(
+          barcode = clean,
+          countryCode = countryCode,
+          productName = productName,
+          brand = brand,
+        )
       }.getOrElse { err ->
         com.example.data.repository.OfferComparisonResult(
           offers = emptyList(),
@@ -95,6 +111,7 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
         isComparingOffers = false,
         hasComparedOffers = true,
         comparedOffers = result.offers,
+        includesSimulatedRetailers = result.includesSimulatedRetailers,
         compareNotice = result.apiNotice,
       )
     }

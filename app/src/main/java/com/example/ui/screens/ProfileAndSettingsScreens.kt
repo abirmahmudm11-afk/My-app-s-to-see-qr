@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -43,19 +47,14 @@ import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,9 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -79,31 +76,22 @@ import com.example.R
 import com.example.data.model.ScanContext
 import com.example.data.model.ScanRecord
 import com.example.domain.MarketConfig
+import com.example.ui.components.AnimatedButton
+import com.example.ui.components.AnimatedIconButton
+import com.example.ui.components.AnimatedOutlinedButton
+import com.example.ui.components.AnimatedTextButton
+import com.example.ui.components.SlidingSegmentedPillBar
 import com.example.ui.components.VerificationLabel
+import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatDetailedTimestamp
 import com.example.ui.components.formatTimestamp
-import com.example.ui.theme.AmberNotice
-import com.example.ui.theme.AmberSoftTint
-import com.example.ui.theme.CobaltInfo
-import com.example.ui.theme.CobaltSoftTint
-import com.example.ui.theme.CoralAccent
-import com.example.ui.theme.CoralSoftTint
-import com.example.ui.theme.CrimsonAlert
-import com.example.ui.theme.CrimsonSoftTint
-import com.example.ui.theme.DeepObsidian
-import com.example.ui.theme.ElectricLime
-import com.example.ui.theme.EmeraldSoftTint
-import com.example.ui.theme.EmeraldTrust
-import com.example.ui.theme.HeaderTealVioletBrush
-import com.example.ui.theme.HeroObsidianEmeraldBrush
-import com.example.ui.theme.ObsidianMutedText
-import com.example.ui.theme.ObsidianOnLime
-import com.example.ui.theme.TangerineAccent
-import com.example.ui.theme.TangerineSoftTint
-import com.example.ui.theme.TealSoftTint
-import com.example.ui.theme.TealVivid
-import com.example.ui.theme.VioletAccent
-import com.example.ui.theme.VioletSoftTint
+import com.example.ui.components.sharedProductBounds
+import com.example.ui.theme.LedgerDeckBrush
+import com.example.ui.theme.LedgerJadeDark
+import com.example.ui.theme.SignalIndigo
+import com.example.ui.theme.SignalIndigoDark
+import com.example.ui.theme.TabularDataStyle
+import com.example.ui.theme.ViewfinderMuted
 import com.example.ui.viewmodel.MainUiState
 
 @Composable
@@ -128,218 +116,269 @@ fun ProfileScreen(
     ?: "Guest Shopper"
   val initials = displayName.split(" ").mapNotNull { it.firstOrNull()?.uppercase() }.take(2).joinToString("").ifEmpty { "G" }
 
-  LazyColumn(
+  Box(
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    // Rich Gradient Profile Hero Banner
-    item {
-      Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-      ) {
-        Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .background(HeroObsidianEmeraldBrush)
-            .padding(18.dp),
-          verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-          ) {
-            Box(
-              modifier = Modifier
-                .size(58.dp)
-                .clip(CircleShape)
-                .background(Brush.linearGradient(listOf(ElectricLime, EmeraldTrust))),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = initials,
-                style = MaterialTheme.typography.headlineMedium,
-                color = ObsidianOnLime,
-                fontWeight = FontWeight.Bold,
-              )
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Text(
-                text = displayName,
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-              )
-              Text(
-                text = user?.email ?: "Exploring in local Guest Mode",
-                style = MaterialTheme.typography.bodySmall,
-                color = ObsidianMutedText,
-              )
-            }
-          }
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            ProfileStatPill("${uiState.wallet.availablePoints} PTS", "Balance", ElectricLime, Modifier.weight(1f))
-            ProfileStatPill("${uiState.recentScans.size}", "Scans", Color(0xFF38BDF8), Modifier.weight(1f))
-            ProfileStatPill(market.countryCode, market.currencyCode, Color(0xFFA78BFA), Modifier.weight(1f))
-          }
-
-          if (user == null) {
-            Button(
-              onClick = onSignIn,
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("profile_sign_in_button"),
-              shape = RoundedCornerShape(14.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = ElectricLime, contentColor = ObsidianOnLime),
-            ) {
-              Text("Continue with Google", fontWeight = FontWeight.Bold)
-            }
-          } else {
-            OutlinedButton(
-              onClick = onSignOut,
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(46.dp)
-                .testTag("profile_sign_out_button"),
-              shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-            ) {
-              Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-              Spacer(Modifier.width(8.dp))
-              Text("Sign Out", color = Color.White)
-            }
-          }
-        }
-      }
-    }
-
-    if (uiState.adminRole != null) {
+    LazyColumn(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
       item {
-        ProfileNavTile(
-          icon = Icons.Rounded.AdminPanelSettings,
-          title = "Admin Control Center (${uiState.adminRole.roleName})",
-          subtitle = "Users (${uiState.allUsers.size}) • Payouts (${uiState.allPayoutRequests.size}) • Receipts (${uiState.pendingReceipts.size})",
-          iconBg = DeepObsidian,
-          iconTint = ElectricLime,
-          onClick = onOpenAdmin,
-        )
+        Text("Profile & Settings", style = MaterialTheme.typography.displayMedium)
       }
-    }
 
-    item {
-      ProfileNavTile(
-        icon = Icons.Rounded.History,
-        title = "Scan History",
-        subtitle = "${uiState.recentScans.size} Room & cloud barcode records",
-        iconBg = VioletSoftTint,
-        iconTint = VioletAccent,
-        onClick = onOpenScanHistory,
-      )
-    }
-    item {
-      ProfileNavTile(
-        icon = Icons.Rounded.Notifications,
-        title = "Notifications",
-        subtitle = "${uiState.notifications.count { !it.read }} unread alerts",
-        iconBg = CoralSoftTint,
-        iconTint = CoralAccent,
-        onClick = onOpenNotifications,
-      )
-    }
-    item {
-      ProfileNavTile(
-        icon = Icons.Rounded.Language,
-        title = "Country & Language",
-        subtitle = "${market.countryName} • ${market.currencyCode} (${market.languageLabel})",
-        iconBg = CobaltSoftTint,
-        iconTint = CobaltInfo,
-        onClick = onOpenCountryLanguage,
-      )
-    }
-
-    item {
-      Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-      ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+      // Account Identity Deck
+      item {
+        Surface(
+          shape = RoundedCornerShape(16.dp),
+          color = Color.Transparent,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(LedgerDeckBrush)
+              .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
           ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-              Surface(color = TealSoftTint, shape = RoundedCornerShape(10.dp)) {
-                Icon(Icons.Rounded.DarkMode, contentDescription = null, tint = TealVivid, modifier = Modifier.padding(8.dp).size(20.dp))
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(52.dp)
+                  .clip(CircleShape)
+                  .background(SignalIndigo),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = initials,
+                  style = MaterialTheme.typography.titleLarge,
+                  color = Color.White,
+                )
               }
-              Text("Obsidian Night Theme", style = MaterialTheme.typography.titleMedium)
+              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                  text = displayName,
+                  style = MaterialTheme.typography.titleLarge,
+                  color = Color.White,
+                )
+                Text(
+                  text = user?.email ?: "Local guest mode · on-device storage",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = ViewfinderMuted,
+                )
+              }
             }
-            Switch(
-              checked = uiState.preferences.darkThemeEnabled,
-              onCheckedChange = onToggleDarkTheme,
-            )
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              ProfileStatCell("${uiState.wallet.availablePoints} PTS", "Balance", LedgerJadeDark, Modifier.weight(1f))
+              ProfileStatCell("${uiState.recentScans.size}", "Scans", SignalIndigoDark, Modifier.weight(1f))
+              ProfileStatCell(market.countryCode, market.currencyCode, Color.White, Modifier.weight(1f))
+            }
+
+            if (user == null) {
+              AnimatedButton(
+                onClick = onSignIn,
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(48.dp)
+                  .testTag("profile_sign_in_button"),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SignalIndigo, contentColor = Color.White),
+              ) {
+                Text("Continue with Google")
+              }
+            } else {
+              AnimatedOutlinedButton(
+                onClick = onSignOut,
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(48.dp)
+                  .testTag("profile_sign_out_button"),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.30f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                  containerColor = Color.White.copy(alpha = 0.08f),
+                  contentColor = Color.White,
+                ),
+              ) {
+                Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Sign Out", color = Color.White)
+              }
+            }
           }
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+        }
+      }
+
+      if (uiState.adminRole != null) {
+        item {
+          Surface(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(14.dp))
+              .bounceClickable(onClick = onOpenAdmin),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
           ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text("Reduced Motion", style = MaterialTheme.typography.titleMedium)
-              Text("Freezes scanner laser sweep, ripples & transitions", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(
-              checked = uiState.preferences.reducedMotionEnabled,
-              onCheckedChange = onToggleReducedMotion,
+            SettingsRowItem(
+              icon = Icons.Rounded.AdminPanelSettings,
+              title = "Admin Control Center (${uiState.adminRole.roleName})",
+              subtitle = "Users (${uiState.allUsers.size}) · Payouts (${uiState.allPayoutRequests.size}) · Receipts (${uiState.pendingReceipts.size})",
             )
           }
         }
       }
-    }
 
-    item {
-      ProfileNavTile(
-        icon = Icons.Rounded.PrivacyTip,
-        title = "Privacy & Account Deletion",
-        subtitle = "Marketing consent & deletion request flow",
-        iconBg = CrimsonSoftTint,
-        iconTint = CrimsonAlert,
-        onClick = onOpenPrivacy,
-      )
-    }
-    item {
-      ProfileNavTile(
-        icon = Icons.Rounded.Description,
-        title = "Terms, Sandbox Rules & Attribution",
-        subtitle = "Open Food Facts ODbL & point rules",
-        iconBg = AmberSoftTint,
-        iconTint = AmberNotice,
-        onClick = onOpenTerms,
-      )
-    }
-    item {
-      ProfileNavTile(
-        icon = Icons.AutoMirrored.Rounded.HelpOutline,
-        title = "Help & Scanner Diagnostics",
-        subtitle = "Supported formats & receipt review SLA",
-        iconBg = EmeraldSoftTint,
-        iconTint = EmeraldTrust,
-        onClick = onOpenHelp,
-      )
+      // Grouped Settings: Activity & Region
+      item {
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column {
+            Box(modifier = Modifier.clickable(onClick = onOpenScanHistory)) {
+              SettingsRowItem(
+                icon = Icons.Rounded.History,
+                title = "Scan History",
+                subtitle = "${uiState.recentScans.size} Room & cloud barcode records",
+              )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Box(modifier = Modifier.clickable(onClick = onOpenNotifications)) {
+              SettingsRowItem(
+                icon = Icons.Rounded.Notifications,
+                title = "Notifications",
+                subtitle = "${uiState.notifications.count { !it.read }} unread alerts",
+              )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Box(modifier = Modifier.clickable(onClick = onOpenCountryLanguage)) {
+              SettingsRowItem(
+                icon = Icons.Rounded.Language,
+                title = "Country & Currency",
+                subtitle = "${market.countryName} · ${market.currencyCode} (${market.languageLabel})",
+              )
+            }
+          }
+        }
+      }
+
+      // Grouped Settings: Display & Motion
+      item {
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp)) {
+                  Icon(
+                    Icons.Rounded.DarkMode,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(8.dp).size(18.dp),
+                  )
+                }
+                Text("Dark Appearance", style = MaterialTheme.typography.titleMedium)
+              }
+              Switch(
+                checked = uiState.preferences.darkThemeEnabled,
+                onCheckedChange = onToggleDarkTheme,
+              )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Reduce Motion", style = MaterialTheme.typography.titleMedium)
+                Text(
+                  text = "Freezes scanner laser sweep and screen animations",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+              Switch(
+                checked = uiState.preferences.reducedMotionEnabled,
+                onCheckedChange = onToggleReducedMotion,
+              )
+            }
+          }
+        }
+      }
+
+      // Grouped Settings: Legal & Support
+      item {
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column {
+            Box(modifier = Modifier.clickable(onClick = onOpenPrivacy)) {
+              SettingsRowItem(
+                icon = Icons.Rounded.PrivacyTip,
+                title = "Privacy & Account Deletion",
+                subtitle = "Marketing consent & deletion request flow",
+              )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Box(modifier = Modifier.clickable(onClick = onOpenTerms)) {
+              SettingsRowItem(
+                icon = Icons.Rounded.Description,
+                title = "Terms & Attribution",
+                subtitle = "Open Food Facts ODbL & point rules",
+              )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Box(modifier = Modifier.clickable(onClick = onOpenHelp)) {
+              SettingsRowItem(
+                icon = Icons.AutoMirrored.Rounded.HelpOutline,
+                title = "Help & Scanner Guide",
+                subtitle = "Supported formats & troubleshooting",
+              )
+            }
+          }
+        }
+      }
+
+      item { Spacer(Modifier.height(12.dp)) }
     }
   }
 }
 
 @Composable
-private fun ProfileStatPill(
+private fun ProfileStatCell(
   value: String,
   label: String,
   accent: Color,
@@ -347,53 +386,46 @@ private fun ProfileStatPill(
 ) {
   Surface(
     modifier = modifier,
-    color = Color.White.copy(alpha = 0.11f),
-    shape = RoundedCornerShape(12.dp),
-    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+    color = Color.White.copy(alpha = 0.08f),
+    shape = RoundedCornerShape(10.dp),
   ) {
     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-      Text(value, style = MaterialTheme.typography.titleMedium, color = accent, fontWeight = FontWeight.Bold)
-      Text(label, style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
+      Text(value, style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = accent)
+      Text(label, style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
     }
   }
 }
 
 @Composable
-private fun ProfileNavTile(
+private fun SettingsRowItem(
   icon: ImageVector,
   title: String,
   subtitle: String,
-  iconBg: Color,
-  iconTint: Color,
-  onClick: () -> Unit,
 ) {
-  Card(
+  Row(
     modifier = Modifier
       .fillMaxWidth()
-      .clickable(onClick = onClick),
-    shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+      .padding(horizontal = 14.dp, vertical = 13.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Row(
-      modifier = Modifier.padding(14.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Surface(color = iconBg, shape = RoundedCornerShape(12.dp)) {
-        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.padding(9.dp).size(20.dp))
-      }
-      Column(modifier = Modifier.weight(1f)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp)) {
       Icon(
-        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+        icon,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(8.dp).size(18.dp),
       )
     }
+    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+      Text(title, style = MaterialTheme.typography.titleMedium)
+      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Icon(
+      Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
   }
 }
 
@@ -413,10 +445,30 @@ fun ScanHistoryScreen(
   var selectedFilter by remember { mutableStateOf("All") }
   var showClearDialog by remember { mutableStateOf(false) }
 
-  val matchedCount = uiState.recentScans.count { it.scanResult == "MATCHED" }
-  val qrCount = uiState.recentScans.count {
-    it.barcodeFormat.contains("QR", ignoreCase = true) || it.sourceProvider.startsWith("QR")
+  val reducedMotion = uiState.preferences.reducedMotionEnabled
+  val matchedCount = remember(uiState.recentScans) {
+    uiState.recentScans.count { it.scanResult == "MATCHED" }
   }
+  val qrCount = remember(uiState.recentScans) {
+    uiState.recentScans.count {
+      it.barcodeFormat.contains("QR", ignoreCase = true) || it.sourceProvider.startsWith("QR")
+    }
+  }
+  val animatedTotalCount by animateIntAsState(
+    targetValue = uiState.recentScans.size,
+    animationSpec = tween(if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing),
+    label = "historyTotalCount",
+  )
+  val animatedMatchedCount by animateIntAsState(
+    targetValue = matchedCount,
+    animationSpec = tween(if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing),
+    label = "historyMatchedCount",
+  )
+  val animatedQrCount by animateIntAsState(
+    targetValue = qrCount,
+    animationSpec = tween(if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing),
+    label = "historyQrCount",
+  )
 
   val filteredScans = remember(uiState.recentScans, query, selectedFilter) {
     val q = query.trim().lowercase()
@@ -436,323 +488,333 @@ fun ScanHistoryScreen(
     }
   }
 
-  LazyColumn(
+  Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
-      .testTag("scan_history_screen"),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+      .background(MaterialTheme.colorScheme.background),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    // Rich Gradient History Banner
-    item {
-      Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-      ) {
-        Column(
+    LazyColumn(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize()
+        .testTag("scan_history_screen"),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      item {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            if (!isTopLevelTab) {
+              AnimatedIconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+              }
+            }
+            Column {
+              Text("Scan History", style = MaterialTheme.typography.displayMedium)
+              Text(
+                text = "Room local database & synced records",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Surface(
+              color = MaterialTheme.colorScheme.surface,
+              shape = CircleShape,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+              AnimatedIconButton(
+                onClick = onOpenDiscover,
+                modifier = Modifier.testTag("history_discover_button"),
+              ) {
+                Icon(Icons.Rounded.Search, contentDescription = "Discover Catalog")
+              }
+            }
+            if (uiState.localScanHistory.isNotEmpty()) {
+              Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = CircleShape,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+              ) {
+                AnimatedIconButton(
+                  onClick = { showClearDialog = true },
+                  modifier = Modifier.testTag("clear_history_button"),
+                ) {
+                  Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear Scan History", tint = MaterialTheme.colorScheme.error)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Clean Tabular History Counter Strip
+      item {
+        Surface(
+          shape = RoundedCornerShape(12.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(vertical = 12.dp),
+          ) {
+            HistoryMetricCell("$animatedTotalCount", "Total", Modifier.weight(1f))
+            HistoryMetricCell("$animatedMatchedCount", "Matched", Modifier.weight(1f))
+            HistoryMetricCell("$animatedQrCount", "QR Codes", Modifier.weight(1f))
+          }
+        }
+      }
+
+      item {
+        OutlinedTextField(
+          value = query,
+          onValueChange = { query = it },
+          placeholder = { Text("Filter by product, brand, or barcode") },
+          leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+          singleLine = true,
+          shape = RoundedCornerShape(10.dp),
           modifier = Modifier
             .fillMaxWidth()
-            .background(HeaderTealVioletBrush)
-            .padding(16.dp),
-          verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-              if (!isTopLevelTab) {
-                IconButton(onClick = onBack) {
-                  Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
-                }
-              }
-              Column {
-                Text(
-                  "ROOM & CLOUD LEDGER",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = ElectricLime,
-                  fontWeight = FontWeight.Bold,
-                )
-                Text(
-                  "Scan History (${uiState.recentScans.size})",
-                  style = MaterialTheme.typography.headlineMedium,
-                  color = Color.White,
-                )
-              }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              Surface(color = Color.White.copy(alpha = 0.16f), shape = CircleShape) {
-                IconButton(
-                  onClick = onOpenDiscover,
-                  modifier = Modifier.testTag("history_discover_button"),
-                ) {
-                  Icon(Icons.Rounded.Search, contentDescription = "Discover Catalog", tint = Color.White)
-                }
-              }
-              if (uiState.localScanHistory.isNotEmpty()) {
-                Surface(color = Color.White.copy(alpha = 0.16f), shape = CircleShape) {
-                  IconButton(
-                    onClick = { showClearDialog = true },
-                    modifier = Modifier.testTag("clear_history_button"),
-                  ) {
-                    Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear Scan History", tint = Color(0xFFFFB4BE))
-                  }
-                }
-              }
-            }
-          }
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            ProfileStatPill("${uiState.recentScans.size}", "Total", ElectricLime, Modifier.weight(1f))
-            ProfileStatPill("$matchedCount", "Matched", Color(0xFF6EE7B7), Modifier.weight(1f))
-            ProfileStatPill("$qrCount", "QR Codes", Color(0xFFFDE68A), Modifier.weight(1f))
-          }
-        }
+            .testTag("history_search_input"),
+        )
       }
-    }
 
-    item {
-      OutlinedTextField(
-        value = query,
-        onValueChange = { query = it },
-        placeholder = { Text("Search product, brand, category, or barcode") },
-        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = VioletAccent) },
-        singleLine = true,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-          .fillMaxWidth()
-          .testTag("history_search_input"),
-      )
-    }
-
-    item {
-      val filterColors = mapOf(
-        "All" to (DeepObsidian to ElectricLime),
-        "Matched" to (EmeraldTrust to Color.White),
-        "QR" to (VioletAccent to Color.White),
-        "Unlisted" to (TangerineAccent to Color.White),
-      )
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        listOf("All", "Matched", "QR", "Unlisted").forEach { filter ->
-          val selected = selectedFilter == filter
-          val (selBg, selFg) = filterColors[filter] ?: (DeepObsidian to ElectricLime)
-          Surface(
-            modifier = Modifier
-              .clip(RoundedCornerShape(10.dp))
-              .clickable { selectedFilter = filter },
-            color = if (selected) selBg else MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(10.dp),
-          ) {
-            Text(
-              text = filter,
-              style = MaterialTheme.typography.labelMedium,
-              color = if (selected) selFg else MaterialTheme.colorScheme.onSurfaceVariant,
-              fontWeight = FontWeight.Bold,
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            )
-          }
-        }
-      }
-    }
-
-    if (filteredScans.isEmpty()) {
       item {
-        val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-        Card(
-          shape = RoundedCornerShape(22.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          border = BorderStroke(1.dp, VioletAccent.copy(alpha = 0.35f)),
-        ) {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                  Brush.horizontalGradient(
-                    if (isDark) listOf(Color(0xFF251942), Color(0xFF13263F)) else listOf(VioletSoftTint, CobaltSoftTint),
-                  ),
-                )
-                .padding(16.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(14.dp),
+        val filters = listOf("All", "Matched", "QR", "Unlisted")
+        SlidingSegmentedPillBar(
+          options = filters,
+          selectedIndex = filters.indexOf(selectedFilter).coerceAtLeast(0),
+          onSelect = { idx -> selectedFilter = filters[idx] },
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+
+      if (filteredScans.isEmpty()) {
+        item {
+          Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          ) {
+            Column(
+              modifier = Modifier.padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-              Image(
-                painter = painterResource(id = R.drawable.img_scan_hero),
-                contentDescription = "Empty scan history",
-                modifier = Modifier
-                  .size(76.dp)
-                  .clip(RoundedCornerShape(16.dp)),
-                contentScale = ContentScale.Crop,
-              )
-              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                  text = if (uiState.recentScans.isEmpty()) "No barcode scans logged yet" else "No matching history entries",
-                  style = MaterialTheme.typography.titleMedium,
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+              ) {
+                Image(
+                  painter = painterResource(id = R.drawable.img_scan_hero),
+                  contentDescription = "Empty scan history",
+                  modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+                  contentScale = ContentScale.Crop,
                 )
-                Text(
-                  text = "Every barcode or QR code you scan is saved automatically to Room with its product details and timestamp.",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                  Text(
+                    text = if (uiState.recentScans.isEmpty()) "No scans logged yet" else "No matching entries",
+                    style = MaterialTheme.typography.titleMedium,
+                  )
+                  Text(
+                    text = "Scanned barcodes and QR codes are saved locally in Room with their timestamp and product metadata.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
               }
-            }
-            Box(modifier = Modifier.padding(14.dp)) {
-              Button(
+              AnimatedButton(
                 onClick = onOpenScan,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VioletAccent, contentColor = Color.White),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(48.dp),
+                shape = RoundedCornerShape(10.dp),
               ) {
                 Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Open Scanner", fontWeight = FontWeight.Bold)
+                Text("Open Scanner")
               }
             }
           }
         }
-      }
-    } else {
-      items(filteredScans, key = { "${it.id}_${it.barcodeValue}_${it.localTimestampMs}" }) { scan ->
-        val isQr = scan.barcodeFormat.contains("QR", ignoreCase = true)
-        val badgeBg = if (isQr) VioletSoftTint else CobaltSoftTint
-        val badgeFg = if (isQr) VioletAccent else CobaltInfo
-        Card(
-          modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpenScanItem(scan) }
-            .testTag("history_item_${scan.barcodeValue}"),
-          shape = RoundedCornerShape(18.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        ) {
-          Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+      } else {
+        items(filteredScans, key = { "${it.id}_${it.barcodeValue}_${it.localTimestampMs}" }) { scan ->
+          val isQr = scan.barcodeFormat.contains("QR", ignoreCase = true)
+          Surface(
+            modifier = Modifier
+              .animateItem()
+              .fillMaxWidth()
+              .sharedProductBounds("product_card_${scan.barcodeValue}")
+              .clip(RoundedCornerShape(14.dp))
+              .bounceClickable { onOpenScanItem(scan) }
+              .testTag("history_item_${scan.barcodeValue}"),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
           ) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Column(
+              modifier = Modifier.padding(14.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-              if (scan.imageUrl.isNotBlank()) {
-                AsyncImage(
-                  model = scan.imageUrl,
-                  contentDescription = scan.productName,
-                  modifier = Modifier
-                    .size(58.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(badgeBg),
-                  contentScale = ContentScale.Crop,
-                )
-              } else {
-                Box(
-                  modifier = Modifier
-                    .size(58.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Brush.linearGradient(listOf(badgeFg, TealVivid))),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Icon(
-                    Icons.Rounded.QrCode2,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp),
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                if (scan.imageUrl.isNotBlank()) {
+                  AsyncImage(
+                    model = scan.imageUrl,
+                    contentDescription = scan.productName,
+                    modifier = Modifier
+                      .size(52.dp)
+                      .clip(RoundedCornerShape(10.dp))
+                      .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentScale = ContentScale.Crop,
                   )
-                }
-              }
-
-              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                  text = scan.productName.ifBlank { scan.barcodeValue },
-                  style = MaterialTheme.typography.titleMedium,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                  Surface(color = badgeBg, shape = RoundedCornerShape(6.dp)) {
-                    Text(
-                      text = scan.barcodeFormat.ifBlank { "GTIN" },
-                      style = MaterialTheme.typography.labelSmall,
-                      color = badgeFg,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                } else {
+                  Box(
+                    modifier = Modifier
+                      .size(52.dp)
+                      .clip(RoundedCornerShape(10.dp))
+                      .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Icon(
+                      Icons.Rounded.QrCode2,
+                      contentDescription = null,
+                      tint = MaterialTheme.colorScheme.primary,
+                      modifier = Modifier.size(24.dp),
                     )
                   }
+                }
+
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                   Text(
-                    text = listOfNotNull(
-                      scan.brand.takeIf { it.isNotBlank() },
-                      scan.barcodeValue,
-                    ).joinToString(" • "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = scan.productName.ifBlank { scan.barcodeValue },
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                   )
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Surface(
+                      color = if (isQr) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                      shape = RoundedCornerShape(4.dp),
+                    ) {
+                      Text(
+                        text = scan.barcodeFormat.ifBlank { "GTIN" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isQr) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                      )
+                    }
+                    Text(
+                      text = listOfNotNull(
+                        scan.brand.takeIf { it.isNotBlank() },
+                        scan.barcodeValue,
+                      ).joinToString(" · "),
+                      style = TabularDataStyle,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                  }
+                  Text(
+                    text = "Scanned ${formatDetailedTimestamp(scan.scannedAt, scan.localTimestampMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
                 }
+
+                scan.localHistoryId?.let { localId ->
+                  AnimatedIconButton(
+                    onClick = { onDeleteEntry(localId) },
+                    modifier = Modifier.testTag("delete_history_$localId"),
+                  ) {
+                    Icon(
+                      Icons.Rounded.Delete,
+                      contentDescription = "Delete scan entry",
+                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                      modifier = Modifier.size(20.dp),
+                    )
+                  }
+                }
+              }
+
+              val metaTags = listOfNotNull(
+                scan.category.takeIf { it.isNotBlank() },
+                scan.quantity.takeIf { it.isNotBlank() }?.let { "Size: $it" },
+                scan.nutriscoreGrade.takeIf { it.isNotBlank() }?.let { "Nutri-Score: $it" },
+                scan.sourceProvider.takeIf { it.isNotBlank() && it != "None" },
+              )
+              if (metaTags.isNotEmpty()) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                  metaTags.forEach { tag ->
+                    Surface(
+                      color = MaterialTheme.colorScheme.surfaceVariant,
+                      shape = RoundedCornerShape(6.dp),
+                    ) {
+                      Text(
+                        text = tag,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                      )
+                    }
+                  }
+                }
+              }
+
+              if (scan.description.isNotBlank()) {
                 Text(
-                  text = "Scanned ${formatDetailedTimestamp(scan.scannedAt, scan.localTimestampMs)}",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = EmeraldTrust,
-                  fontWeight = FontWeight.Medium,
+                  text = scan.description,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis,
                 )
               }
 
-              scan.localHistoryId?.let { localId ->
-                IconButton(
-                  onClick = { onDeleteEntry(localId) },
-                  modifier = Modifier.testTag("delete_history_$localId"),
-                ) {
-                  Icon(
-                    Icons.Rounded.Delete,
-                    contentDescription = "Delete scan entry",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                  )
-                }
-              }
-            }
-
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              VerificationLabel(statusRaw = scan.verificationStatus)
-              Button(
-                onClick = {
-                  onRescan(
-                    ScanContext(
-                      barcodeValue = scan.barcodeValue,
-                      barcodeFormat = scan.barcodeFormat,
-                      productName = scan.productName,
-                      brand = scan.brand,
-                    ),
-                  )
-                },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                  containerColor = MaterialTheme.colorScheme.primaryContainer,
-                  contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
               ) {
-                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Re-scan", fontWeight = FontWeight.Bold)
+                VerificationLabel(statusRaw = scan.verificationStatus)
+                AnimatedOutlinedButton(
+                  onClick = {
+                    onRescan(
+                      ScanContext(
+                        barcodeValue = scan.barcodeValue,
+                        barcodeFormat = scan.barcodeFormat,
+                        productName = scan.productName,
+                        brand = scan.brand,
+                      ),
+                    )
+                  },
+                  shape = RoundedCornerShape(8.dp),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                  Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(Modifier.width(4.dp))
+                  Text("Re-scan")
+                }
               }
             }
           }
@@ -766,22 +828,49 @@ fun ScanHistoryScreen(
       onDismissRequest = { showClearDialog = false },
       title = { Text("Clear Local Scan History?") },
       text = {
-        Text("This removes all saved local barcode history entries stored in your Room database.")
+        Text("This removes all saved barcode entries from your device's Room database.")
       },
       confirmButton = {
-        Button(
+        AnimatedButton(
           onClick = {
             showClearDialog = false
             onClearAll()
           },
-          colors = ButtonDefaults.buttonColors(containerColor = CrimsonAlert),
+          colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
         ) {
           Text("Clear History")
         }
       },
       dismissButton = {
-        TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
+        AnimatedTextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
       },
+    )
+  }
+}
+
+@Composable
+private fun HistoryMetricCell(
+  value: String,
+  label: String,
+  modifier: Modifier = Modifier,
+) {
+  Column(
+    modifier = modifier,
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(2.dp),
+  ) {
+    Text(
+      text = value,
+      style = TabularDataStyle.copy(
+        fontSize = MaterialTheme.typography.titleLarge.fontSize,
+        fontWeight = FontWeight.Bold,
+      ),
+      color = MaterialTheme.colorScheme.onSurface,
+    )
+    Text(
+      text = label,
+      style = MaterialTheme.typography.labelSmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
   }
 }
@@ -792,37 +881,43 @@ fun NotificationsScreen(
   onBack: () -> Unit,
   onMarkRead: (String) -> Unit,
 ) {
-  LazyColumn(
+  Box(
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-        Text("Notifications", style = MaterialTheme.typography.titleLarge)
+    LazyColumn(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      item {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          AnimatedIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+          Text("Notifications", style = MaterialTheme.typography.titleLarge)
+        }
       }
-    }
-    if (uiState.notifications.isEmpty()) {
-      item { Text("No notifications right now.", style = MaterialTheme.typography.bodyMedium) }
-    } else {
-      items(uiState.notifications, key = { it.id }) { item ->
-        Card(
-          modifier = Modifier
-            .fillMaxWidth()
-            .clickable { if (!item.read) onMarkRead(item.id) },
-          shape = RoundedCornerShape(16.dp),
-          colors = CardDefaults.cardColors(
-            containerColor = if (item.read) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-          ),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        ) {
-          Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(item.title, style = MaterialTheme.typography.titleMedium)
-            Text(item.body, style = MaterialTheme.typography.bodySmall)
-            Text(formatTimestamp(item.createdAt), style = MaterialTheme.typography.labelSmall)
+      if (uiState.notifications.isEmpty()) {
+        item { Text("No notifications right now.", style = MaterialTheme.typography.bodyMedium) }
+      } else {
+        items(uiState.notifications, key = { it.id }) { item ->
+          Surface(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(12.dp))
+              .bounceClickable { if (!item.read) onMarkRead(item.id) },
+            shape = RoundedCornerShape(12.dp),
+            color = if (item.read) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Text(item.title, style = MaterialTheme.typography.titleMedium)
+              Text(item.body, style = MaterialTheme.typography.bodySmall)
+              Text(formatTimestamp(item.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
           }
         }
       }
@@ -836,40 +931,51 @@ fun CountryLanguageScreen(
   onBack: () -> Unit,
   onSelectMarket: (countryCode: String, languageCode: String) -> Unit,
 ) {
-  LazyColumn(
+  Box(
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-        Text("Country & Currency", style = MaterialTheme.typography.titleLarge)
+    LazyColumn(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      item {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          AnimatedIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+          Text("Country & Currency", style = MaterialTheme.typography.titleLarge)
+        }
       }
-    }
-    items(MarketConfig.SUPPORTED_MARKETS) { market ->
-      val selected = currentCountryCode.equals(market.countryCode, ignoreCase = true)
-      Card(
-        modifier = Modifier
-          .fillMaxWidth()
-          .clickable { onSelectMarket(market.countryCode, market.defaultLanguage) },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
-      ) {
-        Row(
-          modifier = Modifier.padding(16.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
+      items(MarketConfig.SUPPORTED_MARKETS) { market ->
+        val selected = currentCountryCode.equals(market.countryCode, ignoreCase = true)
+        Surface(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .bounceClickable { onSelectMarket(market.countryCode, market.defaultLanguage) },
+          shape = RoundedCornerShape(12.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+          ),
         ) {
-          Column {
-            Text("${market.countryName} (${market.countryCode})", style = MaterialTheme.typography.titleMedium)
-            Text("${market.currencyCode} • ${market.languageLabel}", style = MaterialTheme.typography.bodySmall)
-          }
-          if (selected) {
-            Icon(Icons.Rounded.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+          Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Column {
+              Text("${market.countryName} (${market.countryCode})", style = MaterialTheme.typography.titleMedium)
+              Text("${market.currencyCode} · ${market.languageLabel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (selected) {
+              Icon(Icons.Rounded.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+            }
           }
         }
       }
@@ -885,67 +991,79 @@ fun PrivacySettingsScreen(
   onRequestDeletion: (String) -> Unit,
 ) {
   var reason by remember { mutableStateOf("") }
-  Column(
+  Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
-      .padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(14.dp),
+      .background(MaterialTheme.colorScheme.background),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-      Text("Privacy & Data Controls", style = MaterialTheme.typography.titleLarge)
-    }
-    Card(
-      shape = RoundedCornerShape(16.dp),
-      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    Column(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text("Campaign & Partner Updates", style = MaterialTheme.typography.titleMedium)
-          Text("Optional notices when new eligible retail offers launch", style = MaterialTheme.typography.bodySmall)
-        }
-        Switch(
-          checked = uiState.preferences.marketingConsent,
-          onCheckedChange = onToggleMarketing,
-        )
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        AnimatedIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+        Text("Privacy & Data Controls", style = MaterialTheme.typography.titleLarge)
       }
-    }
-
-    Card(
-      shape = RoundedCornerShape(16.dp),
-      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-      border = BorderStroke(1.dp, CrimsonAlert.copy(alpha = 0.4f)),
-    ) {
-      Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Request Account Deletion", style = MaterialTheme.typography.titleMedium, color = CrimsonAlert)
-        Text(
-          "Submits an auditable deletion request for your Firestore user profile and marks your account status as DELETION_REQUESTED.",
-          style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedTextField(
-          value = reason,
-          onValueChange = { reason = it },
-          label = { Text("Optional reason") },
-          modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-          onClick = { onRequestDeletion(reason) },
-          enabled = uiState.firebaseUser != null,
-          colors = ButtonDefaults.buttonColors(containerColor = CrimsonAlert),
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier.fillMaxWidth(),
+      Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Icon(Icons.Rounded.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
-          Spacer(Modifier.width(8.dp))
-          Text(if (uiState.firebaseUser == null) "Sign In Required" else "Submit Deletion Request")
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Campaign & Partner Updates", style = MaterialTheme.typography.titleMedium)
+            Text(
+              text = "Optional notices when new retail offers launch",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          Switch(
+            checked = uiState.preferences.marketingConsent,
+            onCheckedChange = onToggleMarketing,
+          )
+        }
+      }
+
+      Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+      ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text("Request Account Deletion", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+          Text(
+            text = "Submits an auditable deletion request for your Firestore user profile and marks your account as DELETION_REQUESTED.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          OutlinedTextField(
+            value = reason,
+            onValueChange = { reason = it },
+            label = { Text("Optional reason") },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          AnimatedButton(
+            onClick = { onRequestDeletion(reason) },
+            enabled = uiState.firebaseUser != null,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Icon(Icons.Rounded.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (uiState.firebaseUser == null) "Sign In Required" else "Submit Deletion Request")
+          }
         }
       }
     }
@@ -954,41 +1072,51 @@ fun PrivacySettingsScreen(
 
 @Composable
 fun TermsRulesScreen(onBack: () -> Unit) {
-  LazyColumn(
+  Box(
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-        Text("Terms & Attribution", style = MaterialTheme.typography.titleLarge)
+    LazyColumn(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      item {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          AnimatedIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+          Text("Terms & Attribution", style = MaterialTheme.typography.titleLarge)
+        }
       }
-    }
-    item {
-      Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-      ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("1. Open Food Facts Attribution", style = MaterialTheme.typography.titleMedium)
-          Text(
-            "Product metadata retrieved from Open Food Facts is provided under the Open Database License (ODbL) by Open Food Facts contributors.",
-            style = MaterialTheme.typography.bodySmall,
-          )
-          Text("2. Verification Tiers", style = MaterialTheme.typography.titleMedium)
-          Text(
-            "Every product & store offer explicitly declares whether it comes from a Verified Merchant, Licensed Provider, Open Food Facts, or Unverified Community Submission.",
-            style = MaterialTheme.typography.bodySmall,
-          )
-          Text("3. Sandbox Rewards Ledger", style = MaterialTheme.typography.titleMedium)
-          Text(
-            "Points (PTS) inside SCAN2MONEY operate in Sandbox Rewards Mode and require human admin review of SHA-256 hashed receipt submissions before credit.",
-            style = MaterialTheme.typography.bodySmall,
-          )
+      item {
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("1. Open Food Facts Attribution", style = MaterialTheme.typography.titleMedium)
+            Text(
+              text = "Product metadata retrieved from Open Food Facts is provided under the Open Database License (ODbL) by Open Food Facts contributors.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("2. Verification Tiers", style = MaterialTheme.typography.titleMedium)
+            Text(
+              text = "Every product and store offer declares whether it comes from a Verified Merchant, Licensed Provider, Open Food Facts, or Unverified Community Submission.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("3. Sandbox Rewards Ledger", style = MaterialTheme.typography.titleMedium)
+            Text(
+              text = "Points (PTS) operate in Sandbox Rewards Mode and require admin review of SHA-256 hashed receipt submissions before credit.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
         }
       }
     }
@@ -997,36 +1125,45 @@ fun TermsRulesScreen(onBack: () -> Unit) {
 
 @Composable
 fun HelpSupportScreen(onBack: () -> Unit) {
-  LazyColumn(
+  Box(
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-        Text("Help & Scanner Guide", style = MaterialTheme.typography.titleLarge)
+    LazyColumn(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      item {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          AnimatedIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+          Text("Help & Scanner Guide", style = MaterialTheme.typography.titleLarge)
+        }
       }
-    }
-    item {
-      Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-      ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("Supported Barcode Symbologies (13)", style = MaterialTheme.typography.titleMedium)
-          Text(
-            "EAN-13, EAN-8, UPC-A, UPC-E, Code 128, Code 39, Code 93, QR Code, Data Matrix, PDF417, Aztec, ITF, Codabar + Manual GS1 Modulo-10 GTIN entry.",
-            style = MaterialTheme.typography.bodySmall,
-          )
-          Text("Tips for Low Light or Damaged Labels", style = MaterialTheme.typography.titleMedium)
-          Text(
-            "Use the Torch icon on supported devices, tap Photo Library to scan a saved label photo, or tap Manual GTIN to enter digits directly.",
-            style = MaterialTheme.typography.bodySmall,
-          )
+      item {
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Supported Symbologies (13)", style = MaterialTheme.typography.titleMedium)
+            Text(
+              text = "EAN-13, EAN-8, UPC-A, UPC-E, Code 128, Code 39, Code 93, QR Code, Data Matrix, PDF417, Aztec, ITF, Codabar + Manual GS1 Modulo-10 GTIN entry.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("Low Light or Damaged Labels", style = MaterialTheme.typography.titleMedium)
+            Text(
+              text = "Use the Flash button in the viewfinder, pick a photo from your library, or enter digits via Manual GTIN.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
         }
       }
     }

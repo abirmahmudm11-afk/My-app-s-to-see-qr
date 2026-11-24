@@ -1,13 +1,13 @@
 package com.example.di
 
 import android.content.Context
-import android.util.Log
 import com.example.R
 import com.example.auth.CredentialManagerAuth
 import com.example.data.local.AppPreferencesDataStore
 import com.example.data.local.LocalCacheDatabase
 import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.remote.OpenPricesApi
+import com.example.data.remote.SimulatedRetailerPriceApi
 import com.example.data.repository.AdminRepository
 import com.example.data.repository.ProductRepository
 import com.example.data.repository.ReceiptAndCampaignRepository
@@ -17,12 +17,8 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Source
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -49,24 +45,13 @@ class AppContainer(context: Context) {
     appContext.getString(R.string.firebase_database_id),
   )
 
-  init {
-    CoroutineScope(Dispatchers.IO).launch {
-      try {
-        firestore.collection("test").document("connection").get(Source.SERVER)
-      } catch (e: Exception) {
-        if (e.message?.contains("client is offline", ignoreCase = true) == true) {
-          Log.e("AppContainer", "Firestore client is offline; check Firebase configuration.")
-        }
-      }
-    }
-  }
-
   val preferencesDataStore = AppPreferencesDataStore(appContext)
   private val localDatabase = LocalCacheDatabase.build(appContext)
 
   private val okHttpClient = OkHttpClient.Builder()
-    .connectTimeout(20, TimeUnit.SECONDS)
-    .readTimeout(20, TimeUnit.SECONDS)
+    .connectTimeout(6, TimeUnit.SECONDS)
+    .readTimeout(8, TimeUnit.SECONDS)
+    .writeTimeout(8, TimeUnit.SECONDS)
     .addInterceptor { chain ->
       val req = chain.request().newBuilder()
         .header("User-Agent", "SCAN2MONEY-Android/1.0 (contact@scan2money.app)")
@@ -74,7 +59,7 @@ class AppContainer(context: Context) {
       chain.proceed(req)
     }
     .addInterceptor(
-      HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC },
+      HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.NONE },
     )
     .build()
 
@@ -96,6 +81,8 @@ class AppContainer(context: Context) {
     .build()
     .create(OpenPricesApi::class.java)
 
+  private val simulatedRetailerPriceApi = SimulatedRetailerPriceApi()
+
   val credentialAuth = CredentialManagerAuth(auth)
   val scanHistoryRepository = ScanHistoryRepository(localDatabase.scanHistoryDao())
   val productRepository = ProductRepository(
@@ -104,6 +91,7 @@ class AppContainer(context: Context) {
     api = openFoodFactsApi,
     openPricesApi = openPricesApi,
     cachedProductDao = localDatabase.cachedProductDao(),
+    simulatedRetailerPriceApi = simulatedRetailerPriceApi,
   )
   val userWalletRepository = UserWalletRepository(
     db = firestore,

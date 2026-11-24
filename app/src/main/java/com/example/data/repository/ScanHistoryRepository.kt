@@ -28,6 +28,8 @@ class ScanHistoryRepository(
     verificationStatus: String,
     scanResult: String,
     scannedAtMs: Long = System.currentTimeMillis(),
+    quantity: String = "",
+    nutriscoreGrade: String = "",
   ): Long {
     return scanHistoryDao.insert(
       ScanHistoryEntity(
@@ -43,6 +45,8 @@ class ScanHistoryRepository(
         verificationStatus = verificationStatus,
         scanResult = scanResult,
         scannedAtMs = scannedAtMs,
+        quantity = quantity.take(64),
+        nutriscoreGrade = nutriscoreGrade.take(8),
       ),
     )
   }

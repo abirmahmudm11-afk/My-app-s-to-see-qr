@@ -87,6 +87,8 @@ data class ScanHistoryEntity(
   val verificationStatus: String,
   val scanResult: String,
   val scannedAtMs: Long,
+  val quantity: String = "",
+  val nutriscoreGrade: String = "",
 ) {
   fun toScanRecord(): ScanRecord = ScanRecord(
     id = "local_$id",
@@ -99,6 +101,8 @@ data class ScanHistoryEntity(
     category = category,
     description = description,
     imageUrl = imageUrl,
+    quantity = quantity,
+    nutriscoreGrade = nutriscoreGrade,
     sourceProvider = dataProvider,
     verificationStatus = verificationStatus,
     scanResult = scanResult,
@@ -157,7 +161,7 @@ interface ScanHistoryDao {
 
 @Database(
   entities = [CachedProductEntity::class, ScanHistoryEntity::class],
-  version = 2,
+  version = 3,
   exportSchema = false,
 )
 abstract class LocalCacheDatabase : RoomDatabase() {

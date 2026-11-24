@@ -119,6 +119,8 @@ data class ScanRecord(
   val category: String = "",
   val description: String = "",
   val imageUrl: String = "",
+  val quantity: String = "",
+  val nutriscoreGrade: String = "",
   val sourceProvider: String = "",
   val verificationStatus: String = VerificationStatus.UNKNOWN.name,
   val scanResult: String = "MATCHED",

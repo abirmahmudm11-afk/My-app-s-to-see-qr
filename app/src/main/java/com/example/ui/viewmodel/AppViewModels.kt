@@ -27,6 +27,7 @@ import com.example.domain.QuestMissionEngine
 import com.example.domain.ShopperMission
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,11 +37,14 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class MainUiState(
   val firebaseUser: FirebaseUser? = null,
+  val preferencesLoaded: Boolean = false,
   val preferences: AppPreferences = AppPreferences(),
   val userProfile: UserProfile? = null,
   val wallet: RewardWallet = RewardWallet(),
@@ -72,6 +76,7 @@ data class MainUiState(
 
 private data class CoreSessionData(
   val user: FirebaseUser?,
+  val prefsLoaded: Boolean,
   val prefs: AppPreferences,
   val profile: UserProfile?,
   val wallet: RewardWallet,
@@ -111,13 +116,20 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
   private val activeScanContextFlow = MutableStateFlow<ScanContext?>(null)
   private val feedbackMessageFlow = MutableStateFlow<String?>(null)
 
+  private val nullablePrefsState: StateFlow<AppPreferences?> = container.preferencesDataStore.preferencesFlow
+    .map<AppPreferences, AppPreferences?> { it }
+    .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+  private val currentPrefs: AppPreferences
+    get() = nullablePrefsState.value ?: AppPreferences()
+
   private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
     val user = firebaseAuth.currentUser
     authUserFlow.value = user
     if (user != null) {
       viewModelScope.launch {
         runCatching {
-          val prefs = prefsState.value
+          val prefs = currentPrefs
           container.userWalletRepository.ensureAccountInitialized(
             userId = user.uid,
             displayName = user.displayName ?: user.email?.substringBefore("@") ?: "Shopper",
@@ -132,15 +144,12 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
     }
   }
 
-  private val prefsState: StateFlow<AppPreferences> = container.preferencesDataStore.preferencesFlow
-    .stateIn(viewModelScope, SharingStarted.Eagerly, AppPreferences())
-
   init {
     container.auth.addAuthStateListener(authListener)
     container.auth.currentUser?.let { existing ->
       viewModelScope.launch {
         runCatching {
-          val prefs = prefsState.value
+          val prefs = currentPrefs
           container.userWalletRepository.ensureAccountInitialized(
             userId = existing.uid,
             displayName = existing.displayName ?: existing.email?.substringBefore("@") ?: "Shopper",
@@ -162,18 +171,18 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
 
   private val coreFlow = authUserFlow.flatMapLatest { user ->
     if (user == null) {
-      combine(authUserFlow, prefsState) { u, prefs ->
-        CoreSessionData(u, prefs, null, RewardWallet(), emptyList())
+      combine(authUserFlow, nullablePrefsState) { u, prefs ->
+        CoreSessionData(u, prefs != null, prefs ?: AppPreferences(), null, RewardWallet(), emptyList())
       }
     } else {
       combine(
         authUserFlow,
-        prefsState,
+        nullablePrefsState,
         container.userWalletRepository.observeUserProfile(user.uid).safeOr(null),
         container.userWalletRepository.observeWallet(user.uid).safeOr(RewardWallet(userId = user.uid)),
         container.userWalletRepository.observeTransactions(user.uid).safeOr(emptyList()),
       ) { u, prefs, profile, wallet, txs ->
-        CoreSessionData(u, prefs, profile, wallet, txs)
+        CoreSessionData(u, prefs != null, prefs ?: AppPreferences(), profile, wallet, txs)
       }
     }
   }
@@ -305,6 +314,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
 
     MainUiState(
       firebaseUser = core.user,
+      preferencesLoaded = core.prefsLoaded,
       preferences = core.prefs,
       userProfile = core.profile,
       wallet = core.wallet,
@@ -333,7 +343,8 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
       activeScanContext = scanContext,
       feedbackMessage = feedback,
     )
-  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), MainUiState())
+  }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), MainUiState())
 
   fun setScanContext(context: ScanContext) {
     activeScanContextFlow.value = context
@@ -370,7 +381,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
 
   fun attemptAutoSignIn(activityContext: Context) {
     viewModelScope.launch {
-      val prefs = prefsState.value
+      val prefs = currentPrefs
       if (prefs.onboardingCompleted && !prefs.guestMode && container.auth.currentUser == null) {
         val user = container.credentialAuth.attemptAutoSignIn(activityContext)
         if (user != null) {
@@ -396,7 +407,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
   private suspend fun handleAuthenticatedUser(user: FirebaseUser, message: String) {
     container.preferencesDataStore.setOnboardingCompleted(true)
     container.preferencesDataStore.setGuestMode(false)
-    val prefs = prefsState.value
+    val prefs = currentPrefs
     runCatching {
       container.userWalletRepository.ensureAccountInitialized(
         userId = user.uid,

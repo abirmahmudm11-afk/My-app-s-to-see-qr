@@ -1,12 +1,15 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -26,23 +30,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AdminPanelSettings
-import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,10 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -70,32 +66,25 @@ import com.example.data.model.Campaign
 import com.example.data.model.ScanContext
 import com.example.data.model.ScanRecord
 import com.example.domain.MarketConfig
+import com.example.ui.components.AnimatedButton
+import com.example.ui.components.AnimatedIconButton
+import com.example.ui.components.AnimatedOutlinedButton
 import com.example.ui.components.GuestModeBanner
 import com.example.ui.components.ProductSummaryCard
 import com.example.ui.components.QuestMissionsSectionCard
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.SlidingSegmentedPillBar
 import com.example.ui.components.VerificationLabel
+import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatTimestamp
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.AmberSoftTint
-import com.example.ui.theme.CobaltInfo
-import com.example.ui.theme.CobaltSoftTint
-import com.example.ui.theme.CoralAccent
-import com.example.ui.theme.CyanInfo
-import com.example.ui.theme.DeepObsidian
-import com.example.ui.theme.ElectricLime
-import com.example.ui.theme.EmeraldSoftTint
-import com.example.ui.theme.EmeraldTrust
-import com.example.ui.theme.HeaderEmeraldCobaltBrush
-import com.example.ui.theme.HeroObsidianEmeraldBrush
-import com.example.ui.theme.ObsidianDivider
-import com.example.ui.theme.ObsidianElevated
-import com.example.ui.theme.ObsidianMutedText
-import com.example.ui.theme.ObsidianOnLime
-import com.example.ui.theme.TangerineAccent
-import com.example.ui.theme.TealVivid
-import com.example.ui.theme.VioletAccent
-import com.example.ui.theme.VioletSoftTint
+import com.example.ui.components.sharedProductBounds
+import com.example.ui.theme.LedgerDeckBrush
+import com.example.ui.theme.LedgerJadeDark
+import com.example.ui.theme.ReticleAmber
+import com.example.ui.theme.SignalIndigo
+import com.example.ui.theme.TabularDataStyle
+import com.example.ui.theme.TabularFigureLargeStyle
+import com.example.ui.theme.ViewfinderMuted
 import com.example.ui.viewmodel.MainUiState
 
 @Composable
@@ -112,88 +101,98 @@ fun HomeScreen(
   onOpenAdmin: () -> Unit,
   onSignInRequested: () -> Unit,
 ) {
-  val unreadCount = uiState.notifications.count { !it.read }
-  val market = MarketConfig.findByCountry(uiState.preferences.countryCode)
-  var chartTab by remember { mutableIntStateOf(0) } // 0 = 7d Scans, 1 = Format Breakdown
+  val unreadCount = remember(uiState.notifications) { uiState.notifications.count { !it.read } }
+  val market = remember(uiState.preferences.countryCode) { MarketConfig.findByCountry(uiState.preferences.countryCode) }
+  val reducedMotion = uiState.preferences.reducedMotionEnabled
+  var chartTab by remember { mutableIntStateOf(0) }
+  val animatedAvailablePoints by animateIntAsState(
+    targetValue = uiState.wallet.availablePoints.toInt(),
+    animationSpec = tween(durationMillis = if (reducedMotion) 0 else 280, easing = FastOutSlowInEasing),
+    label = "heroAvailablePts",
+  )
+  val animatedPendingPoints by animateIntAsState(
+    targetValue = uiState.wallet.pendingPoints.toInt(),
+    animationSpec = tween(durationMillis = if (reducedMotion) 0 else 280, easing = FastOutSlowInEasing),
+    label = "heroPendingPts",
+  )
 
-  LazyColumn(
+  BoxWithConstraints(
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(16.dp),
+    contentAlignment = Alignment.TopCenter,
   ) {
-    // Rich Atmospheric Top Header Strip
-    item {
-      Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-      ) {
+    val isWide = maxWidth >= 720.dp
+
+    LazyColumn(
+      modifier = Modifier
+        .widthIn(max = 860.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      // Crisp Operate Header (no eyebrow badge stack)
+      item {
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .background(HeaderEmeraldCobaltBrush)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(vertical = 2.dp),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Surface(
-              color = ElectricLime,
-              shape = RoundedCornerShape(8.dp),
-            ) {
-              Text(
-                text = "SCAN2MONEY • ${market.countryCode} (${market.currencyCode})",
-                style = MaterialTheme.typography.labelSmall,
-                color = ObsidianOnLime,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-              )
-            }
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-              text = uiState.firebaseUser?.displayName?.let { "Welcome back, $it" } ?: "Product & Rewards Hub",
-              style = MaterialTheme.typography.headlineMedium,
-              color = Color.White,
+              text = uiState.firebaseUser?.displayName?.let { "Welcome, $it" } ?: "SCAN2MONEY",
+              style = MaterialTheme.typography.displayMedium,
+              color = MaterialTheme.colorScheme.onBackground,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
+            Text(
+              text = "${market.countryName} · ${market.currencyCode} ledger",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           }
+
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             if (uiState.adminRole != null) {
               Surface(
-                color = Color.White.copy(alpha = 0.16f),
+                color = MaterialTheme.colorScheme.surface,
                 shape = CircleShape,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
               ) {
-                IconButton(onClick = onOpenAdmin) {
+                AnimatedIconButton(onClick = onOpenAdmin) {
                   Icon(
                     Icons.Rounded.AdminPanelSettings,
                     contentDescription = "Admin Console",
-                    tint = ElectricLime,
+                    tint = MaterialTheme.colorScheme.primary,
                   )
                 }
               }
             }
             Surface(
-              color = Color.White.copy(alpha = 0.16f),
+              color = MaterialTheme.colorScheme.surface,
               shape = CircleShape,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
-              IconButton(onClick = onOpenNotifications) {
+              AnimatedIconButton(onClick = onOpenNotifications) {
                 Box {
                   Icon(
                     Icons.Rounded.Notifications,
                     contentDescription = "Notifications",
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onSurface,
                   )
                   if (unreadCount > 0) {
                     Box(
                       modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .size(9.dp)
+                        .size(8.dp)
                         .clip(CircleShape)
-                        .background(CoralAccent),
+                        .background(MaterialTheme.colorScheme.error),
                     )
                   }
                 }
@@ -202,91 +201,73 @@ fun HomeScreen(
           }
         }
       }
-    }
 
-    if (uiState.firebaseUser == null) {
-      item {
-        GuestModeBanner(onSignInClick = onSignInRequested)
+      if (uiState.firebaseUser == null) {
+        item {
+          GuestModeBanner(onSignInClick = onSignInRequested)
+        }
       }
-    }
 
-    // Hero Emerald-Obsidian Gradient Balance Command Card with Glow Rings
-    item {
-      Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.35f)),
-      ) {
-        Box(
-          modifier = Modifier
-            .fillMaxWidth()
-            .background(HeroObsidianEmeraldBrush),
+      // Authoritative Balance Ledger Deck + Primary Actions
+      item {
+        Surface(
+          shape = RoundedCornerShape(16.dp),
+          color = Color.Transparent,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
-          Canvas(modifier = Modifier.matchParentSize()) {
-            drawCircle(
-              color = ElectricLime.copy(alpha = 0.10f),
-              radius = size.width * 0.34f,
-              center = Offset(size.width * 0.92f, size.height * 0.14f),
-            )
-            drawCircle(
-              color = CobaltInfo.copy(alpha = 0.18f),
-              radius = size.width * 0.28f,
-              center = Offset(size.width * 0.08f, size.height * 0.95f),
-            )
-          }
-
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+              .background(LedgerDeckBrush)
+              .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
           ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
+              verticalAlignment = Alignment.Top,
             ) {
-              Column {
+              Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                  text = "SANDBOX LEDGER BALANCE",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = EmeraldSoftTint,
+                  text = "Available balance",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = ViewfinderMuted,
                 )
                 Row(
                   verticalAlignment = Alignment.Bottom,
                   horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                   Text(
-                    text = "${uiState.wallet.availablePoints}",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = ElectricLime,
+                    text = "$animatedAvailablePoints",
+                    style = TabularFigureLargeStyle,
+                    color = Color.White,
                   )
                   Text(
-                    text = "PTS available",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
+                    text = "PTS",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = LedgerJadeDark,
                     modifier = Modifier.padding(bottom = 6.dp),
                   )
                 }
               }
+
               Surface(
-                color = Color.White.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, AmberGold.copy(alpha = 0.45f)),
+                color = Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(10.dp),
               ) {
                 Column(
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                   horizontalAlignment = Alignment.End,
                 ) {
                   Text(
-                    text = "${uiState.wallet.pendingPoints} PTS",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = AmberGold,
+                    text = "$animatedPendingPoints PTS",
+                    style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
+                    color = ReticleAmber,
                   )
                   Text(
                     text = "Pending review",
                     style = MaterialTheme.typography.labelSmall,
-                    color = ObsidianMutedText,
+                    color = ViewfinderMuted,
                   )
                 }
               }
@@ -294,43 +275,35 @@ fun HomeScreen(
 
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-              AnchorPillCard("$0", "to scan", AmberGold, modifier = Modifier.weight(1f))
-              AnchorPillCard("< 2s", "catalog lookup", Color(0xFF38BDF8), modifier = Modifier.weight(1f))
-              AnchorPillCard("100p", "voucher start", ElectricLime, modifier = Modifier.weight(1f))
-            }
-
-            Row(
-              modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-              Button(
+              AnimatedButton(
                 onClick = onOpenScan,
                 modifier = Modifier
                   .weight(1f)
                   .height(48.dp)
                   .testTag("home_scan_item_button"),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
-                  containerColor = ElectricLime,
-                  contentColor = ObsidianOnLime,
+                  containerColor = SignalIndigo,
+                  contentColor = Color.White,
                 ),
               ) {
                 Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Scan Item", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("Scan Item", style = MaterialTheme.typography.labelLarge)
               }
-              OutlinedButton(
+
+              AnimatedOutlinedButton(
                 onClick = { onOpenReceiptSubmit(null) },
                 modifier = Modifier
                   .weight(1f)
                   .height(48.dp)
                   .testTag("home_log_receipt_button"),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.30f)),
                 colors = ButtonDefaults.outlinedButtonColors(
-                  containerColor = Color.White.copy(alpha = 0.10f),
+                  containerColor = Color.White.copy(alpha = 0.08f),
                   contentColor = Color.White,
                 ),
               ) {
@@ -347,339 +320,178 @@ fun HomeScreen(
           }
         }
       }
-    }
 
-    // Vibrant Color-Coded Bento Capability Dock
-    item {
-      val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        BentoActionTile(
-          icon = Icons.Rounded.Search,
-          label = "Discover",
-          cardBg = if (isDark) Color(0xFF132846) else Color(0xFFDCEBFF),
-          iconBg = CobaltInfo,
-          borderColor = CobaltInfo.copy(alpha = 0.35f),
-          onClick = onOpenDiscover,
-          modifier = Modifier.weight(1f).testTag("home_bento_discover"),
-        )
-        BentoActionTile(
-          icon = Icons.Rounded.AccountBalanceWallet,
-          label = "Wallet",
-          cardBg = if (isDark) Color(0xFF0E2F26) else Color(0xFFCCF8E6),
-          iconBg = EmeraldTrust,
-          borderColor = EmeraldTrust.copy(alpha = 0.35f),
-          onClick = onOpenRewards,
-          modifier = Modifier.weight(1f).testTag("home_bento_wallet"),
-        )
-        BentoActionTile(
-          icon = Icons.AutoMirrored.Rounded.ReceiptLong,
-          label = "Receipts",
-          cardBg = if (isDark) Color(0xFF35200E) else Color(0xFFFFEBC7),
-          iconBg = TangerineAccent,
-          borderColor = TangerineAccent.copy(alpha = 0.35f),
-          onClick = { onOpenReceiptSubmit(null) },
-          modifier = Modifier.weight(1f).testTag("home_bento_receipts"),
-        )
-        BentoActionTile(
-          icon = Icons.Rounded.History,
-          label = "History",
-          cardBg = if (isDark) Color(0xFF271944) else Color(0xFFEBDFFF),
-          iconBg = VioletAccent,
-          borderColor = VioletAccent.copy(alpha = 0.35f),
-          onClick = onOpenScanHistory,
-          modifier = Modifier.weight(1f).testTag("home_bento_history"),
-        )
-      }
-    }
-
-    // Quest & Mission Progress Card
-    item {
-      QuestMissionsSectionCard(
-        missions = uiState.shopperMissions,
-        reducedMotion = uiState.preferences.reducedMotionEnabled,
-        onOpenScan = onOpenScan,
-        onOpenReceiptSubmit = { onOpenReceiptSubmit(null) },
-      )
-    }
-
-    // Activity Breakdown Card with Colorful Bars
-    item {
-      ScanActivityAnalyticsCard(
-        scans = uiState.recentScans,
-        chartTab = chartTab,
-        onSelectTab = { chartTab = it },
-      )
-    }
-
-    if (uiState.campaigns.isNotEmpty()) {
+      // Unified Quick Access Strip (Single coherent surface system, zero candy rainbow)
       item {
-        SectionHeader(
-          title = "Active Partner Campaigns",
-          actionLabel = "All Rewards",
-          onAction = onOpenRewards,
-          accentColor = TangerineAccent,
-        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          QuickAccessTile(
+            icon = Icons.Rounded.Search,
+            label = "Discover",
+            onClick = onOpenDiscover,
+            modifier = Modifier
+              .weight(1f)
+              .testTag("home_bento_discover"),
+          )
+          QuickAccessTile(
+            icon = Icons.Rounded.AccountBalanceWallet,
+            label = "Wallet",
+            onClick = onOpenRewards,
+            modifier = Modifier
+              .weight(1f)
+              .testTag("home_bento_wallet"),
+          )
+          QuickAccessTile(
+            icon = Icons.AutoMirrored.Rounded.ReceiptLong,
+            label = "Receipts",
+            onClick = { onOpenReceiptSubmit(null) },
+            modifier = Modifier
+              .weight(1f)
+              .testTag("home_bento_receipts"),
+          )
+          QuickAccessTile(
+            icon = Icons.Rounded.History,
+            label = "History",
+            onClick = onOpenScanHistory,
+            modifier = Modifier
+              .weight(1f)
+              .testTag("home_bento_history"),
+          )
+        }
       }
-      item {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          items(uiState.campaigns, key = { it.id }) { campaign ->
-            CampaignHighlightCard(
-              campaign = campaign,
-              onSubmitReceipt = { onOpenReceiptSubmit(campaign.id) },
+
+      if (isWide) {
+        item {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.Top,
+          ) {
+            QuestMissionsSectionCard(
+              missions = uiState.shopperMissions,
+              reducedMotion = reducedMotion,
+              onOpenScan = onOpenScan,
+              onOpenReceiptSubmit = { onOpenReceiptSubmit(null) },
+              modifier = Modifier.weight(1f),
+            )
+            ScanActivityAnalyticsCard(
+              scans = uiState.recentScans,
+              chartTab = chartTab,
+              reducedMotion = reducedMotion,
+              onSelectTab = { chartTab = it },
+              modifier = Modifier.weight(1f),
             )
           }
         }
+      } else {
+        item {
+          QuestMissionsSectionCard(
+            missions = uiState.shopperMissions,
+            reducedMotion = reducedMotion,
+            onOpenScan = onOpenScan,
+            onOpenReceiptSubmit = { onOpenReceiptSubmit(null) },
+          )
+        }
+        item {
+          ScanActivityAnalyticsCard(
+            scans = uiState.recentScans,
+            chartTab = chartTab,
+            reducedMotion = reducedMotion,
+            onSelectTab = { chartTab = it },
+          )
+        }
       }
-    }
 
-    item {
-      SectionHeader(
-        title = "Recent Activity & Quick Re-scan",
-        actionLabel = if (uiState.recentScans.isNotEmpty()) "Full History" else null,
-        onAction = onOpenScanHistory,
-        accentColor = VioletAccent,
-      )
-    }
-
-    if (uiState.recentScans.isEmpty()) {
-      item {
-        IllustratedEmptyScanCard(
-          onOpenScan = onOpenScan,
-          onTryPopularCode = onOpenProduct,
-        )
+      if (uiState.campaigns.isNotEmpty()) {
+        item {
+          SectionHeader(
+            title = "Active Partner Campaigns",
+            actionLabel = "All Rewards",
+            onAction = onOpenRewards,
+          )
+        }
+        item {
+          LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(uiState.campaigns, key = { it.id }) { campaign ->
+              CampaignHighlightCard(
+                campaign = campaign,
+                onSubmitReceipt = { onOpenReceiptSubmit(campaign.id) },
+              )
+            }
+          }
+        }
       }
-    } else {
-      items(
-        items = uiState.recentScans.take(5),
-        key = { "${it.id}_${it.barcodeValue}_${it.localTimestampMs}" },
-      ) { scan ->
-        RecentScanWithRescanCard(
-          scan = scan,
-          onInspect = { onOpenProduct(scan.barcodeValue) },
-          onRescan = {
-            onRescan(
-              ScanContext(
-                barcodeValue = scan.barcodeValue,
-                barcodeFormat = scan.barcodeFormat,
-                productName = scan.productName,
-                brand = scan.brand,
-              ),
-            )
-          },
-        )
-      }
-    }
 
-    if (uiState.cachedCatalog.isNotEmpty()) {
       item {
         SectionHeader(
-          title = "Offline-Ready Catalog",
-          actionLabel = "Search",
-          onAction = onOpenDiscover,
-          accentColor = CobaltInfo,
+          title = "Recent Scans",
+          actionLabel = if (uiState.recentScans.isNotEmpty()) "All History" else null,
+          onAction = onOpenScanHistory,
         )
       }
-      items(uiState.cachedCatalog.take(3), key = { it.barcode }) { product ->
-        ProductSummaryCard(
-          product = product,
-          onClick = { onOpenProduct(product.barcode) },
-        )
-      }
-    }
 
-    item { Spacer(Modifier.height(16.dp)) }
+      if (uiState.recentScans.isEmpty()) {
+        item {
+          EmptyScanWelcomeCard(
+            onOpenScan = onOpenScan,
+            onTryPopularCode = onOpenProduct,
+          )
+        }
+      } else {
+        items(
+          items = uiState.recentScans.take(5),
+          key = { "${it.id}_${it.barcodeValue}_${it.localTimestampMs}" },
+        ) { scan ->
+          RecentScanWithRescanCard(
+            scan = scan,
+            onInspect = { onOpenProduct(scan.barcodeValue) },
+            onRescan = {
+              onRescan(
+                ScanContext(
+                  barcodeValue = scan.barcodeValue,
+                  barcodeFormat = scan.barcodeFormat,
+                  productName = scan.productName,
+                  brand = scan.brand,
+                ),
+              )
+            },
+            modifier = Modifier.animateItem(),
+          )
+        }
+      }
+
+      if (uiState.cachedCatalog.isNotEmpty()) {
+        item {
+          SectionHeader(
+            title = "Offline Catalog",
+            actionLabel = "Search",
+            onAction = onOpenDiscover,
+          )
+        }
+        items(uiState.cachedCatalog.take(3), key = { it.barcode }) { product ->
+          ProductSummaryCard(
+            product = product,
+            onClick = { onOpenProduct(product.barcode) },
+            modifier = Modifier.animateItem(),
+          )
+        }
+      }
+
+      item { Spacer(Modifier.height(12.dp)) }
+    }
   }
 }
 
 @Composable
-private fun IllustratedEmptyScanCard(
+private fun EmptyScanWelcomeCard(
   onOpenScan: () -> Unit,
   onTryPopularCode: (String) -> Unit,
 ) {
-  val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-  Card(
-    shape = RoundedCornerShape(22.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    border = BorderStroke(1.dp, TealVivid.copy(alpha = 0.3f)),
-  ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .background(
-            Brush.horizontalGradient(
-              if (isDark) {
-                listOf(Color(0xFF0F2D27), Color(0xFF172C47))
-              } else {
-                listOf(Color(0xFFD5F9EC), Color(0xFFDBEAFE))
-              },
-            ),
-          )
-          .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-      ) {
-        Image(
-          painter = painterResource(id = R.drawable.img_scan_hero),
-          contentDescription = "Scan any product barcode",
-          modifier = Modifier
-            .size(84.dp)
-            .clip(RoundedCornerShape(16.dp)),
-          contentScale = ContentScale.Crop,
-        )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(
-            "Ready to scan your first item",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-          )
-          Text(
-            "Scan a retail barcode or tap a popular sample product below to inspect nutrition & compare live store prices.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-      }
-      Column(
-        modifier = Modifier.padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-          Surface(
-            modifier = Modifier
-              .weight(1f)
-              .clip(RoundedCornerShape(10.dp))
-              .clickable { onTryPopularCode("3017620422003") },
-            color = CobaltSoftTint,
-            shape = RoundedCornerShape(10.dp),
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.Center,
-            ) {
-              Icon(Icons.Rounded.Bolt, contentDescription = null, tint = CobaltInfo, modifier = Modifier.size(15.dp))
-              Spacer(Modifier.width(4.dp))
-              Text("Try Nutella", style = MaterialTheme.typography.labelSmall, color = CobaltInfo, fontWeight = FontWeight.Bold)
-            }
-          }
-          Surface(
-            modifier = Modifier
-              .weight(1f)
-              .clip(RoundedCornerShape(10.dp))
-              .clickable { onTryPopularCode("5449000000996") },
-            color = VioletSoftTint,
-            shape = RoundedCornerShape(10.dp),
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.Center,
-            ) {
-              Icon(Icons.Rounded.Bolt, contentDescription = null, tint = VioletAccent, modifier = Modifier.size(15.dp))
-              Spacer(Modifier.width(4.dp))
-              Text("Try Coca-Cola", style = MaterialTheme.typography.labelSmall, color = VioletAccent, fontWeight = FontWeight.Bold)
-            }
-          }
-        }
-        Button(
-          onClick = onOpenScan,
-          modifier = Modifier.fillMaxWidth().height(48.dp),
-          shape = RoundedCornerShape(14.dp),
-          colors = ButtonDefaults.buttonColors(
-            containerColor = EmeraldTrust,
-            contentColor = Color.White,
-          ),
-        ) {
-          Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-          Spacer(Modifier.width(8.dp))
-          Text("Open Barcode Scanner", fontWeight = FontWeight.Bold)
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun AnchorPillCard(
-  value: String,
-  label: String,
-  accentColor: Color,
-  modifier: Modifier = Modifier,
-) {
   Surface(
-    modifier = modifier,
-    color = Color.White.copy(alpha = 0.11f),
-    shape = RoundedCornerShape(12.dp),
-    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-  ) {
-    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-      Text(value, style = MaterialTheme.typography.titleMedium, color = accentColor, fontWeight = FontWeight.Bold)
-      Text(label, style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText, maxLines = 1)
-    }
-  }
-}
-
-@Composable
-private fun BentoActionTile(
-  icon: ImageVector,
-  label: String,
-  cardBg: Color,
-  iconBg: Color,
-  borderColor: Color,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  Surface(
-    modifier = modifier
-      .clip(RoundedCornerShape(18.dp))
-      .clickable(onClick = onClick),
-    color = cardBg,
-    shape = RoundedCornerShape(18.dp),
-    border = BorderStroke(1.dp, borderColor),
-  ) {
-    Column(
-      modifier = Modifier.padding(vertical = 14.dp, horizontal = 6.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      Surface(
-        color = iconBg,
-        shape = RoundedCornerShape(12.dp),
-      ) {
-        Icon(
-          icon,
-          contentDescription = label,
-          tint = Color.White,
-          modifier = Modifier.padding(8.dp).size(20.dp),
-        )
-      }
-      Text(
-        label,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-        fontWeight = FontWeight.Bold,
-        maxLines = 1,
-      )
-    }
-  }
-}
-
-@Composable
-private fun ScanActivityAnalyticsCard(
-  scans: List<ScanRecord>,
-  chartTab: Int,
-  onSelectTab: (Int) -> Unit,
-) {
-  val barColors = listOf(CobaltInfo, TealVivid, EmeraldTrust, VioletAccent, CyanInfo, TangerineAccent, EmeraldTrust)
-  Card(
-    shape = RoundedCornerShape(22.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    shape = RoundedCornerShape(16.dp),
+    color = MaterialTheme.colorScheme.surface,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   ) {
     Column(
@@ -689,50 +501,169 @@ private fun ScanActivityAnalyticsCard(
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
+        Image(
+          painter = painterResource(id = R.drawable.img_scan_hero),
+          contentDescription = "Scan any product barcode",
+          modifier = Modifier
+            .size(72.dp)
+            .clip(RoundedCornerShape(12.dp)),
+          contentScale = ContentScale.Crop,
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(
+            text = "Scan your first product",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+            text = "Open the barcode camera or inspect a sample item below to compare store prices.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      }
+
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        AnimatedOutlinedButton(
+          onClick = { onTryPopularCode("3017620422003") },
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(10.dp),
+        ) {
+          Text("Try Nutella")
+        }
+        AnimatedOutlinedButton(
+          onClick = { onTryPopularCode("5449000000996") },
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(10.dp),
+        ) {
+          Text("Try Coca-Cola")
+        }
+      }
+
+      AnimatedButton(
+        onClick = onOpenScan,
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(48.dp),
+        shape = RoundedCornerShape(10.dp),
+      ) {
+        Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Open Barcode Scanner")
+      }
+    }
+  }
+}
+
+@Composable
+private fun QuickAccessTile(
+  icon: ImageVector,
+  label: String,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    modifier = modifier
+      .clip(RoundedCornerShape(12.dp))
+      .bounceClickable(onClick = onClick),
+    color = MaterialTheme.colorScheme.surface,
+    shape = RoundedCornerShape(12.dp),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+  ) {
+    Column(
+      modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(8.dp),
+      ) {
+        Icon(
+          icon,
+          contentDescription = label,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier
+            .padding(8.dp)
+            .size(18.dp),
+        )
+      }
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+  }
+}
+
+@Composable
+private fun ScanActivityAnalyticsCard(
+  scans: List<ScanRecord>,
+  chartTab: Int,
+  reducedMotion: Boolean,
+  onSelectTab: (Int) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val dayBuckets = remember(scans) {
+    val nowMs = System.currentTimeMillis()
+    (6 downTo 0).map { daysAgo ->
+      val start = nowMs - (daysAgo + 1) * 86_400_000L
+      val end = nowMs - daysAgo * 86_400_000L
+      scans.count { scan ->
+        val t = scan.scannedAt?.toDate()?.time ?: scan.localTimestampMs
+        t in start..end
+      }
+    }
+  }
+  val formatCounts = remember(scans) {
+    scans.groupingBy { it.barcodeFormat.ifEmpty { "Unknown" } }
+      .eachCount()
+      .entries
+      .sortedByDescending { it.value }
+      .take(4)
+  }
+
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(16.dp),
+    color = MaterialTheme.colorScheme.surface,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+      Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Column(modifier = Modifier.weight(1f)) {
-          Text("Scan Pulse", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+          Text("Scan Activity", style = MaterialTheme.typography.titleLarge)
           Text(
-            "${scans.size} total scans recorded locally & in cloud",
+            text = "${scans.size} scans saved",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          listOf("Recency", "Formats").forEachIndexed { idx, label ->
-            val selected = chartTab == idx
-            Surface(
-              modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .clickable { onSelectTab(idx) },
-              color = if (selected) DeepObsidian else MaterialTheme.colorScheme.surfaceVariant,
-              shape = RoundedCornerShape(10.dp),
-            ) {
-              Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (selected) ElectricLime else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-              )
-            }
-          }
-        }
+        SlidingSegmentedPillBar(
+          options = listOf("7 Days", "Formats"),
+          selectedIndex = chartTab,
+          onSelect = onSelectTab,
+          modifier = Modifier.width(164.dp),
+          height = 38.dp,
+        )
       }
 
       if (chartTab == 0) {
-        val nowMs = System.currentTimeMillis()
-        val dayBuckets = (6 downTo 0).map { daysAgo ->
-          val start = nowMs - (daysAgo + 1) * 86_400_000L
-          val end = nowMs - daysAgo * 86_400_000L
-          scans.count { scan ->
-            val t = scan.scannedAt?.toDate()?.time ?: scan.localTimestampMs
-            t in start..end
-          }
-        }
         val maxVal = maxOf(1, dayBuckets.maxOrNull() ?: 1)
         Row(
           modifier = Modifier
@@ -742,8 +673,18 @@ private fun ScanActivityAnalyticsCard(
           verticalAlignment = Alignment.Bottom,
         ) {
           dayBuckets.forEachIndexed { i, count ->
-            val fraction = (count.toFloat() / maxVal.toFloat()).coerceIn(0.16f, 1f)
-            val barColor = barColors[i % barColors.size]
+            val targetFraction = if (count == 0) 0.14f else (count.toFloat() / maxVal.toFloat()).coerceIn(0.2f, 1f)
+            val animatedFraction by animateFloatAsState(
+              targetValue = targetFraction,
+              animationSpec = tween(durationMillis = if (reducedMotion) 0 else 280, easing = FastOutSlowInEasing),
+              label = "scanBarHeight_$i",
+            )
+            val isToday = i == 6
+            val barColor = when {
+              count == 0 -> MaterialTheme.colorScheme.surfaceVariant
+              isToday -> MaterialTheme.colorScheme.primary
+              else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+            }
             Column(
               modifier = Modifier.weight(1f),
               horizontalAlignment = Alignment.CenterHorizontally,
@@ -752,73 +693,68 @@ private fun ScanActivityAnalyticsCard(
               if (count > 0) {
                 Text(
                   text = "$count",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = barColor,
-                  fontWeight = FontWeight.Bold,
+                  style = TabularDataStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
+                  color = MaterialTheme.colorScheme.primary,
                 )
               }
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height((46f * fraction).dp)
-                  .clip(RoundedCornerShape(8.dp))
-                  .background(
-                    if (count > 0) {
-                      Brush.verticalGradient(listOf(barColor, barColor.copy(alpha = 0.65f)))
-                    } else {
-                      Brush.verticalGradient(listOf(barColor.copy(alpha = 0.16f), barColor.copy(alpha = 0.08f)))
-                    },
-                  ),
+                  .height((46f * animatedFraction).dp)
+                  .clip(RoundedCornerShape(6.dp))
+                  .background(barColor),
               )
               Spacer(Modifier.height(4.dp))
               Text(
-                text = if (i == 6) "Today" else "-${6 - i}d",
+                text = if (isToday) "Today" else "-${6 - i}d",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (i == 6) EmeraldTrust else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = if (i == 6) FontWeight.Bold else FontWeight.Medium,
+                color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
               )
             }
           }
         }
       } else {
-        val formatCounts = scans.groupingBy { it.barcodeFormat.ifEmpty { "Unknown" } }
-          .eachCount()
-          .entries
-          .sortedByDescending { it.value }
-          .take(4)
         if (formatCounts.isEmpty()) {
           Text(
-            "Scan items to view barcode symbology breakdown.",
+            text = "Scan items to view barcode symbology breakdown.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         } else {
           val maxFmt = maxOf(1, formatCounts.maxOf { it.value })
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             formatCounts.forEachIndexed { index, (fmt, count) ->
-              val tint = barColors[index % barColors.size]
+              val animatedWidth by animateFloatAsState(
+                targetValue = (count.toFloat() / maxFmt.toFloat()).coerceIn(0.1f, 1f),
+                animationSpec = tween(durationMillis = if (reducedMotion) 0 else 280, easing = FastOutSlowInEasing),
+                label = "formatBarWidth_$index",
+              )
               Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically,
                 ) {
-                  Text(fmt, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                  Text("$count scans", style = MaterialTheme.typography.labelSmall, color = tint, fontWeight = FontWeight.Bold)
+                  Text(fmt, style = MaterialTheme.typography.labelLarge)
+                  Text(
+                    text = "$count",
+                    style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                  )
                 }
                 Box(
                   modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(tint.copy(alpha = 0.15f)),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                   Box(
                     modifier = Modifier
-                      .fillMaxWidth((count.toFloat() / maxFmt.toFloat()).coerceIn(0.1f, 1f))
+                      .fillMaxWidth(animatedWidth)
                       .height(6.dp)
                       .clip(RoundedCornerShape(3.dp))
-                      .background(tint),
+                      .background(MaterialTheme.colorScheme.primary),
                   )
                 }
               }
@@ -835,66 +771,64 @@ private fun CampaignHighlightCard(
   campaign: Campaign,
   onSubmitReceipt: () -> Unit,
 ) {
-  Card(
-    modifier = Modifier.width(268.dp),
-    shape = RoundedCornerShape(20.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    border = BorderStroke(1.dp, TealVivid.copy(alpha = 0.35f)),
+  Surface(
+    modifier = Modifier.width(264.dp),
+    shape = RoundedCornerShape(14.dp),
+    color = MaterialTheme.colorScheme.surface,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
       Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .background(Brush.horizontalGradient(listOf(EmeraldTrust, CobaltInfo)))
-          .padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          campaign.partnerName.uppercase(),
-          style = MaterialTheme.typography.labelSmall,
-          color = Color.White,
-          fontWeight = FontWeight.Bold,
+          text = campaign.partnerName,
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f),
         )
-        Surface(color = ElectricLime, shape = RoundedCornerShape(8.dp)) {
+        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(6.dp)) {
           Text(
-            "+${campaign.rewardPoints} PTS",
-            style = MaterialTheme.typography.labelSmall,
-            color = ObsidianOnLime,
-            fontWeight = FontWeight.Bold,
+            text = "+${campaign.rewardPoints} PTS",
+            style = TabularDataStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize, fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
           )
         }
       }
-      Column(
-        modifier = Modifier.padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+      Text(
+        text = campaign.title,
+        style = MaterialTheme.typography.titleMedium,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Text(
+        text = campaign.terms,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
+      HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+      AnimatedButton(
+        onClick = onSubmitReceipt,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(
+          containerColor = MaterialTheme.colorScheme.primaryContainer,
+          contentColor = MaterialTheme.colorScheme.primary,
+        ),
       ) {
-        Text(
-          campaign.title,
-          style = MaterialTheme.typography.titleMedium,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-          campaign.terms,
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Button(
-          onClick = onSubmitReceipt,
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(12.dp),
-          colors = ButtonDefaults.buttonColors(
-            containerColor = EmeraldSoftTint,
-            contentColor = EmeraldTrust,
-          ),
-        ) {
-          Text("Claim with Receipt", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-        }
+        Text("Claim with Receipt", style = MaterialTheme.typography.labelLarge)
       }
     }
   }
@@ -905,16 +839,18 @@ private fun RecentScanWithRescanCard(
   scan: ScanRecord,
   onInspect: () -> Unit,
   onRescan: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
   var menuExpanded by remember { mutableStateOf(false) }
 
-  Card(
-    modifier = Modifier
+  Surface(
+    modifier = modifier
       .fillMaxWidth()
-      .clickable(onClick = onInspect),
-    shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+      .sharedProductBounds("product_card_${scan.barcodeValue}")
+      .clip(RoundedCornerShape(14.dp))
+      .bounceClickable(onClick = onInspect),
+    shape = RoundedCornerShape(14.dp),
+    color = MaterialTheme.colorScheme.surface,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   ) {
     Column(
@@ -933,21 +869,32 @@ private fun RecentScanWithRescanCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
-          Text(
-            text = listOfNotNull(
-              scan.brand.takeIf { it.isNotBlank() },
-              scan.barcodeFormat.ifBlank { "GTIN" },
-              scan.barcodeValue,
-            ).joinToString(" • "),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            if (scan.brand.isNotBlank()) {
+              Text(
+                text = scan.brand,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(
+              text = "${scan.barcodeFormat.ifBlank { "GTIN" }} ${scan.barcodeValue}",
+              style = TabularDataStyle,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
         }
 
         Box {
-          IconButton(onClick = { menuExpanded = true }) {
+          AnimatedIconButton(onClick = { menuExpanded = true }) {
             Icon(Icons.Rounded.MoreVert, contentDescription = "Scan options")
           }
           DropdownMenu(
@@ -955,7 +902,7 @@ private fun RecentScanWithRescanCard(
             onDismissRequest = { menuExpanded = false },
           ) {
             DropdownMenuItem(
-              text = { Text("Re-scan with ${scan.barcodeFormat.ifBlank { "product" }} context") },
+              text = { Text("Re-scan with ${scan.barcodeFormat.ifBlank { "product" }}") },
               leadingIcon = { Icon(Icons.Rounded.Refresh, contentDescription = null) },
               onClick = {
                 menuExpanded = false
@@ -983,22 +930,18 @@ private fun RecentScanWithRescanCard(
           VerificationLabel(statusRaw = scan.verificationStatus)
           Text(
             text = formatTimestamp(scan.scannedAt, scan.localTimestampMs),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
-        Button(
+        AnimatedOutlinedButton(
           onClick = onRescan,
-          shape = RoundedCornerShape(12.dp),
-          colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-          ),
+          shape = RoundedCornerShape(8.dp),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         ) {
           Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(4.dp))
-          Text("Re-scan", fontWeight = FontWeight.SemiBold)
+          Text("Re-scan", style = MaterialTheme.typography.labelLarge)
         }
       }
     }

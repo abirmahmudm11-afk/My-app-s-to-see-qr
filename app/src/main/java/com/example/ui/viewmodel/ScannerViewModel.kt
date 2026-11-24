@@ -163,6 +163,8 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
               sourceProvider = product.dataProvider,
               verificationStatus = product.verificationStatus,
               scanResult = "MATCHED",
+              quantity = outcome.apiMetadata.quantity,
+              nutriscoreGrade = outcome.apiMetadata.nutriscoreGrade,
             )
           }
           _uiState.value = ScannerUiState.Matched(

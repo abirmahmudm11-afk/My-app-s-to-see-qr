@@ -18,21 +18,25 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,12 +49,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FlashOff
@@ -60,37 +66,40 @@ import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -100,24 +109,36 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ScanContext
 import com.example.domain.SupportedBarcodeFormat
+import com.example.ui.components.AnimatedButton
+import com.example.ui.components.AnimatedIconButton
+import com.example.ui.components.AnimatedOutlinedButton
+import com.example.ui.components.AnimatedTextButton
 import com.example.ui.components.BarcodeFeedbackPlayer
 import com.example.ui.components.VerificationLabel
-import com.example.ui.theme.DeepObsidian
-import com.example.ui.theme.ElectricLime
-import com.example.ui.theme.EmeraldSoftTint
-import com.example.ui.theme.EmeraldTrust
-import com.example.ui.theme.ObsidianDivider
-import com.example.ui.theme.ObsidianElevated
-import com.example.ui.theme.ObsidianMutedText
-import com.example.ui.theme.ObsidianOnLime
+import com.example.ui.components.bounceClickable
+import com.example.ui.theme.LedgerJadeDark
+import com.example.ui.theme.ReticleAmber
+import com.example.ui.theme.ReticleAmberText
+import com.example.ui.theme.SignalIndigo
+import com.example.ui.theme.SignalIndigoDark
+import com.example.ui.theme.TabularDataStyle
+import com.example.ui.theme.ViewfinderMuted
+import com.example.ui.theme.ViewfinderSurface
+import com.example.ui.theme.ViewfinderVoid
 import com.example.ui.viewmodel.ScannerUiState
 import com.example.ui.viewmodel.ScannerViewModel
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun ScanScreen(
@@ -151,32 +172,48 @@ fun ScanScreen(
 
   val feedbackPlayer = remember { BarcodeFeedbackPlayer() }
   val rippleProgress = remember { Animatable(0f) }
+  val detectionLaserProgress = remember { Animatable(0f) }
+  var detectionLocked by remember { mutableStateOf(false) }
+  var isDecodingPhoto by remember { mutableStateOf(false) }
 
   LaunchedEffect(detectionPulseSeq) {
     if (detectionPulseSeq > 0L) {
+      detectionLocked = true
       feedbackPlayer.playSuccessBeep()
       runCatching { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
       if (!reducedMotion) {
         rippleProgress.snapTo(0.01f)
+        detectionLaserProgress.snapTo(0.01f)
+        val laserJob = launch {
+          detectionLaserProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+          )
+        }
         rippleProgress.animateTo(
           targetValue = 1f,
-          animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+          animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
         )
+        laserJob.join()
         rippleProgress.snapTo(0f)
+        detectionLaserProgress.snapTo(0f)
+      } else {
+        delay(200L)
       }
+      detectionLocked = false
     }
   }
 
   LaunchedEffect(uiState) {
     when (val state = uiState) {
       is ScannerUiState.Matched -> {
-        delay(220L)
+        delay(if (reducedMotion) 200L else 480L)
         val code = state.barcode
         scannerViewModel.resetScanner()
         onOpenProductDetail(code)
       }
       is ScannerUiState.NotFound -> {
-        delay(220L)
+        delay(if (reducedMotion) 200L else 480L)
         val code = state.barcode
         scannerViewModel.resetScanner()
         onOpenProductDetail(code)
@@ -218,10 +255,12 @@ fun ScanScreen(
     contract = ActivityResultContracts.PickVisualMedia(),
   ) { uri: Uri? ->
     if (uri != null) {
+      isDecodingPhoto = true
       runCatching {
         val image = InputImage.fromFilePath(context, uri)
         mlKitScanner.process(image)
           .addOnSuccessListener { barcodes ->
+            isDecodingPhoto = false
             val first = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
             if (first != null) {
               scannerViewModel.processScannedBarcode(
@@ -234,9 +273,11 @@ fun ScanScreen(
             }
           }
           .addOnFailureListener {
+            isDecodingPhoto = false
             onShowMessage("Could not decode barcode from image.")
           }
       }.onFailure {
+        isDecodingPhoto = false
         onShowMessage("Unable to open image file.")
       }
     }
@@ -250,7 +291,6 @@ fun ScanScreen(
     }
   }
 
-  // Non-blocking tip after 12s of idle scanning instead of interrupting the camera with an error card
   LaunchedEffect(uiState, hasCameraPermission) {
     showIdleTip = false
     if (hasCameraPermission && uiState is ScannerUiState.Idle) {
@@ -262,50 +302,53 @@ fun ScanScreen(
   Column(
     modifier = Modifier
       .fillMaxSize()
-      .background(DeepObsidian),
+      .background(ViewfinderVoid),
   ) {
-    // Top Viewfinder Controls + Re-scan Context Banner
+    // Clean Optical Viewfinder Header
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
+        .padding(horizontal = 16.dp, vertical = 10.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
           Text(
-            text = "LIVE BARCODE ENGINE",
-            style = MaterialTheme.typography.labelSmall,
-            color = ElectricLime,
-          )
-          Text(
-            text = "13 Formats • Instant Feedback",
-            style = MaterialTheme.typography.titleMedium,
+            text = "Barcode Scanner",
+            style = MaterialTheme.typography.titleLarge,
             color = Color.White,
           )
+          Text(
+            text = "13 retail & QR symbologies",
+            style = MaterialTheme.typography.bodySmall,
+            color = ViewfinderMuted,
+          )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          if (hasFlashUnit) {
-            IconButton(
-              onClick = {
+
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+          AnimatedIconButton(
+            onClick = {
+              if (!hasFlashUnit) {
+                onShowMessage("Flashlight hardware unavailable on this device.")
+              } else {
                 val next = !torchEnabled
                 torchEnabled = next
                 runCatching { boundCamera?.cameraControl?.enableTorch(next) }
-              },
-              modifier = Modifier.testTag("scanner_torch_button"),
-            ) {
-              Icon(
-                imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
-                contentDescription = "Toggle Flash",
-                tint = if (torchEnabled) ElectricLime else Color.White,
-              )
-            }
+              }
+            },
+            modifier = Modifier.testTag("scanner_torch_button"),
+          ) {
+            Icon(
+              imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
+              contentDescription = "Toggle Flashlight",
+              tint = if (torchEnabled) ReticleAmber else Color.White,
+            )
           }
-          IconButton(
+          AnimatedIconButton(
             onClick = {
               photoPickerLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
@@ -315,26 +358,26 @@ fun ScanScreen(
           ) {
             Icon(Icons.Rounded.PhotoLibrary, contentDescription = "Scan from photo", tint = Color.White)
           }
-          IconButton(
+          AnimatedIconButton(
             onClick = onOpenHistory,
             modifier = Modifier.testTag("scanner_history_button"),
           ) {
             Icon(Icons.Rounded.History, contentDescription = "Scan History", tint = Color.White)
           }
-          IconButton(
+          AnimatedIconButton(
             onClick = { showManualDialog = true },
             modifier = Modifier.testTag("scanner_manual_icon_button"),
           ) {
-            Icon(Icons.Rounded.Edit, contentDescription = "Manual GTIN entry", tint = ElectricLime)
+            Icon(Icons.Rounded.Edit, contentDescription = "Enter GTIN manually", tint = Color.White)
           }
         }
       }
 
       if (scanContext != null) {
         Surface(
-          color = ObsidianElevated,
-          shape = RoundedCornerShape(14.dp),
-          border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.45f)),
+          color = ViewfinderSurface,
+          shape = RoundedCornerShape(10.dp),
+          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
         ) {
           Row(
             modifier = Modifier
@@ -345,38 +388,38 @@ fun ScanScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "RE-SCAN CONTEXT • ${scanContext.barcodeFormat.ifBlank { "GTIN" }}",
+                text = "Re-scanning ${scanContext.barcodeFormat.ifBlank { "GTIN" }}",
                 style = MaterialTheme.typography.labelSmall,
-                color = ElectricLime,
+                color = ReticleAmber,
               )
               Text(
                 text = listOfNotNull(
                   scanContext.productName.takeIf { it.isNotBlank() },
                   scanContext.brand.takeIf { it.isNotBlank() },
                   scanContext.barcodeValue,
-                ).joinToString(" • "),
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
             }
-            IconButton(onClick = onClearScanContext, modifier = Modifier.size(32.dp)) {
-              Icon(Icons.Rounded.Close, contentDescription = "Clear re-scan context", tint = Color.White, modifier = Modifier.size(16.dp))
+            AnimatedIconButton(onClick = onClearScanContext) {
+              Icon(Icons.Rounded.Close, contentDescription = "Clear re-scan context", tint = Color.White, modifier = Modifier.size(18.dp))
             }
           }
         }
       }
     }
 
-    // Main Camera Viewfinder Area
+    // Optical Viewfinder Viewport
     Box(
       modifier = Modifier
         .weight(1f)
         .fillMaxWidth()
-        .padding(horizontal = 16.dp)
-        .clip(RoundedCornerShape(24.dp))
-        .background(Color(0xFF0A100E)),
+        .padding(horizontal = 14.dp)
+        .clip(RoundedCornerShape(16.dp))
+        .background(Color.Black),
       contentAlignment = Alignment.Center,
     ) {
       if (hasCameraPermission) {
@@ -402,26 +445,26 @@ fun ScanScreen(
           Icon(
             Icons.Rounded.CameraAlt,
             contentDescription = null,
-            tint = ElectricLime,
-            modifier = Modifier.size(44.dp),
+            tint = Color.White,
+            modifier = Modifier.size(40.dp),
           )
           Text(
-            text = "Camera Access Needed",
+            text = "Camera Access Required",
             style = MaterialTheme.typography.titleLarge,
             color = Color.White,
           )
           Text(
-            text = "Allow camera permission to scan retail barcodes live, or choose a photo / enter a GTIN manually below.",
+            text = "Enable camera permission for live scanning, or pick a photo or enter a barcode below.",
             style = MaterialTheme.typography.bodySmall,
-            color = ObsidianMutedText,
+            color = ViewfinderMuted,
           )
-          Button(
+          AnimatedButton(
             onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
             colors = ButtonDefaults.buttonColors(
-              containerColor = ElectricLime,
-              contentColor = ObsidianOnLime,
+              containerColor = SignalIndigo,
+              contentColor = Color.White,
             ),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(10.dp),
             modifier = Modifier.testTag("enable_camera_button"),
           ) {
             Text("Enable Camera")
@@ -429,15 +472,172 @@ fun ScanScreen(
         }
       }
 
-      // Animated Reticle, Scanning Sweep & Detection Ripple Overlay
-      ScanningReticleOverlay(
-        isActive = uiState is ScannerUiState.Idle,
-        detectionRippleProgress = rippleProgress.value,
-        reducedMotion = reducedMotion,
-        modifier = Modifier.fillMaxSize(),
-      )
+      val isProcessingScan = isDecodingPhoto || uiState is ScannerUiState.LookingUp
+      val isLiveScanning = hasCameraPermission && uiState is ScannerUiState.Idle && !isDecodingPhoto
 
-      // Subtle non-blocking idle hint pill at the bottom of the viewfinder
+      if (hasCameraPermission || uiState !is ScannerUiState.Idle || isDecodingPhoto) {
+        ScanningReticleOverlay(
+          isLiveScanning = isLiveScanning,
+          isProcessingScan = isProcessingScan,
+          detectionLaserProgress = detectionLaserProgress.value,
+          detectionRippleProgress = rippleProgress.value,
+          isDetectionLocked = detectionLocked || uiState is ScannerUiState.Matched || uiState is ScannerUiState.NotFound,
+          reducedMotion = reducedMotion,
+          modifier = Modifier.fillMaxSize(),
+        )
+      }
+
+      // Live viewfinder scanning indicator pill (Top-Start)
+      androidx.compose.animation.AnimatedVisibility(
+        visible = isLiveScanning && !detectionLocked,
+        enter = fadeIn(tween(150)),
+        exit = fadeOut(tween(120)),
+        modifier = Modifier
+          .align(Alignment.TopStart)
+          .padding(12.dp),
+      ) {
+        val livePulseAlpha = if (!reducedMotion) {
+          val pulseTransition = rememberInfiniteTransition(label = "liveScanDot")
+          val dotAlpha by pulseTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+              animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+              repeatMode = RepeatMode.Reverse,
+            ),
+            label = "dotAlpha",
+          )
+          dotAlpha
+        } else {
+          1f
+        }
+        Surface(
+          color = ViewfinderSurface.copy(alpha = 0.88f),
+          shape = RoundedCornerShape(999.dp),
+          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+          modifier = Modifier.testTag("scanner_live_status_pill"),
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+          ) {
+            Box(
+              modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(ReticleAmber.copy(alpha = livePulseAlpha)),
+            )
+            Text(
+              text = "Scanning",
+              style = MaterialTheme.typography.labelMedium,
+              color = Color.White,
+            )
+          }
+        }
+      }
+
+      // Accessible >=48dp Floating In-Preview Flashlight Toggle
+      if (hasCameraPermission) {
+        val flashBg by animateColorAsState(
+          targetValue = if (torchEnabled) ReticleAmber else ViewfinderSurface.copy(alpha = 0.88f),
+          animationSpec = tween(if (reducedMotion) 0 else 180),
+          label = "flashPillBg",
+        )
+        Surface(
+          modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(12.dp)
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(999.dp))
+            .bounceClickable {
+              if (!hasFlashUnit) {
+                onShowMessage("Flashlight hardware unavailable on this device.")
+              } else {
+                val next = !torchEnabled
+                torchEnabled = next
+                runCatching { boundCamera?.cameraControl?.enableTorch(next) }
+              }
+            }
+            .testTag("camera_preview_flashlight_button"),
+          color = flashBg,
+          shape = RoundedCornerShape(999.dp),
+          border = BorderStroke(1.dp, if (torchEnabled) ReticleAmber else Color.White.copy(alpha = 0.25f)),
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Icon(
+              imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
+              contentDescription = if (torchEnabled) "Turn flashlight off" else "Turn flashlight on",
+              tint = if (torchEnabled) ReticleAmberText else Color.White,
+              modifier = Modifier.size(18.dp),
+            )
+            Text(
+              text = if (torchEnabled) "Flash On" else "Flash",
+              style = MaterialTheme.typography.labelMedium,
+              color = if (torchEnabled) ReticleAmberText else Color.White,
+            )
+          }
+        }
+      }
+
+      androidx.compose.animation.AnimatedVisibility(
+        visible = isProcessingScan || detectionLocked || uiState is ScannerUiState.Matched || uiState is ScannerUiState.NotFound,
+        enter = fadeIn(tween(150)),
+        exit = fadeOut(tween(120)),
+        modifier = Modifier
+          .align(Alignment.TopCenter)
+          .padding(top = 14.dp),
+      ) {
+        val badgeBorderColor by animateColorAsState(
+          targetValue = if (isProcessingScan && !detectionLocked) SignalIndigoDark else LedgerJadeDark,
+          animationSpec = tween(if (reducedMotion) 0 else 180),
+          label = "scanBadgeBorder",
+        )
+        Surface(
+          color = ViewfinderVoid.copy(alpha = 0.92f),
+          shape = RoundedCornerShape(8.dp),
+          border = BorderStroke(1.dp, badgeBorderColor),
+          modifier = Modifier.testTag("scanner_detection_laser_badge"),
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+          ) {
+            if (isProcessingScan && uiState !is ScannerUiState.Matched && uiState !is ScannerUiState.NotFound) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                color = SignalIndigoDark,
+                strokeWidth = 2.dp,
+              )
+            } else {
+              Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = "Barcode detected",
+                tint = LedgerJadeDark,
+                modifier = Modifier.size(16.dp),
+              )
+            }
+            val lockLabel = when {
+              isDecodingPhoto -> "Scanning photo…"
+              uiState is ScannerUiState.Matched -> "Locked · ${(uiState as ScannerUiState.Matched).barcode}"
+              uiState is ScannerUiState.LookingUp -> "Reading · ${(uiState as ScannerUiState.LookingUp).barcode}"
+              uiState is ScannerUiState.NotFound -> "Locked · ${(uiState as ScannerUiState.NotFound).barcode}"
+              else -> "Barcode Detected"
+            }
+            Text(
+              text = lockLabel,
+              style = TabularDataStyle.copy(fontSize = MaterialTheme.typography.labelMedium.fontSize),
+              color = Color.White,
+            )
+          }
+        }
+      }
+
       androidx.compose.animation.AnimatedVisibility(
         visible = showIdleTip && uiState is ScannerUiState.Idle,
         enter = fadeIn(),
@@ -447,307 +647,340 @@ fun ScanScreen(
           .padding(14.dp),
       ) {
         Surface(
-          color = DeepObsidian.copy(alpha = 0.88f),
-          shape = RoundedCornerShape(14.dp),
-          border = BorderStroke(1.dp, ElectricLime.copy(alpha = 0.4f)),
+          color = ViewfinderVoid.copy(alpha = 0.9f),
+          shape = RoundedCornerShape(8.dp),
+          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
         ) {
           Text(
-            text = "Hold barcode steady in the reticle, or pick a photo / sample below.",
+            text = "Align barcode in frame, or select a photo or sample below.",
             style = MaterialTheme.typography.bodySmall,
-            color = EmeraldSoftTint,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
           )
         }
       }
 
-      // Overlay State Cards (LookingUp, Matched, NotFound, QrUrlDetected, QrPromoDetected, Error)
-      when (val state = uiState) {
-        is ScannerUiState.LookingUp -> {
-          Surface(
-            color = DeepObsidian.copy(alpha = 0.94f),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, ElectricLime),
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
+      AnimatedContent(
+        targetState = uiState,
+        transitionSpec = {
+          val dur = if (reducedMotion) 0 else 200
+          (fadeIn(tween(dur)) + slideInVertically(tween(dur, easing = FastOutSlowInEasing)) { it / 4 })
+            .togetherWith(fadeOut(tween(dur / 2)))
+        },
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .fillMaxWidth(),
+        label = "scannerOverlayCard",
+      ) { state ->
+        when (state) {
+          is ScannerUiState.LookingUp -> {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp),
+              contentAlignment = Alignment.Center,
             ) {
-              CircularProgressIndicator(modifier = Modifier.size(20.dp), color = ElectricLime, strokeWidth = 2.dp)
-              Column {
-                Text("Looking up ${state.barcode}", style = MaterialTheme.typography.titleMedium, color = Color.White)
-                Text("${state.format.label} • Validated format", style = MaterialTheme.typography.labelSmall, color = ElectricLime)
-              }
-            }
-          }
-        }
-        is ScannerUiState.Matched -> {
-          Card(
-            modifier = Modifier
-              .align(Alignment.BottomCenter)
-              .fillMaxWidth()
-              .padding(14.dp)
-              .testTag("scanner_matched_card"),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+              Surface(
+                color = ViewfinderVoid.copy(alpha = 0.94f),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, SignalIndigoDark.copy(alpha = 0.6f)),
               ) {
-                VerificationLabel(statusRaw = state.product.verificationStatus)
-                Text(
-                  text = if (state.fromOfflineCache) "Offline Cache" else state.format.label,
-                  style = MaterialTheme.typography.labelSmall,
-                  color = EmeraldTrust,
-                )
-              }
-              Text(state.product.name, style = MaterialTheme.typography.titleLarge)
-              Text(
-                listOfNotNull(
-                  state.product.brand.takeIf { it.isNotBlank() },
-                  state.barcode,
-                ).joinToString(" • "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                  onClick = { scannerViewModel.resetScanner() },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
+                Row(
+                  modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                  Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                  Spacer(Modifier.width(4.dp))
-                  Text("Scan Next")
-                }
-                Button(
-                  onClick = {
-                    val code = state.barcode
-                    scannerViewModel.resetScanner()
-                    onOpenProductDetail(code)
-                  },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Text("Open Details")
-                }
-              }
-            }
-          }
-        }
-        is ScannerUiState.NotFound -> {
-          Card(
-            modifier = Modifier
-              .align(Alignment.BottomCenter)
-              .fillMaxWidth()
-              .padding(14.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-              Text("Product Not Found in Catalog", style = MaterialTheme.typography.titleMedium)
-              Text(
-                "Barcode ${state.barcode} (${state.format.label}) was saved to your History but not returned by Open Food Facts or merchant records.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                  onClick = { scannerViewModel.resetScanner() },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Text("Retry Scan")
-                }
-                Button(
-                  onClick = {
-                    val code = state.barcode
-                    scannerViewModel.resetScanner()
-                    onOpenProductDetail(code)
-                  },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Icon(Icons.Rounded.AddCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
-                  Spacer(Modifier.width(4.dp))
-                  Text("Add Product")
-                }
-              }
-            }
-          }
-        }
-        is ScannerUiState.QrUrlDetected -> {
-          Card(
-            modifier = Modifier
-              .align(Alignment.BottomCenter)
-              .fillMaxWidth()
-              .padding(14.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Text("QR Product URL Detected", style = MaterialTheme.typography.titleMedium)
-                Text(state.format.label, style = MaterialTheme.typography.labelSmall, color = EmeraldTrust)
-              }
-              Text(
-                state.url,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-              )
-              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                  onClick = { scannerViewModel.resetScanner() },
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Text("Scan Next")
-                }
-                if (!state.embeddedBarcode.isNullOrBlank()) {
-                  Button(
-                    onClick = { scannerViewModel.lookupEmbeddedBarcode(state.embeddedBarcode) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                  ) {
-                    Text("Inspect GTIN")
+                  CircularProgressIndicator(modifier = Modifier.size(18.dp), color = ReticleAmber, strokeWidth = 2.dp)
+                  Column {
+                    Text(
+                      text = "Looking up ${state.barcode}",
+                      style = MaterialTheme.typography.titleSmall,
+                      color = Color.White,
+                    )
+                    Text(
+                      text = state.format.label,
+                      style = MaterialTheme.typography.labelSmall,
+                      color = ViewfinderMuted,
+                    )
                   }
                 }
-                Button(
-                  onClick = {
-                    val target = state.url
-                    scannerViewModel.resetScanner()
-                    runCatching {
-                      context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
-                    }.onFailure {
-                      onShowMessage("No browser available to open URL.")
-                    }
-                  },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                  Spacer(Modifier.width(4.dp))
-                  Text("Open Link")
-                }
               }
             }
           }
-        }
-        is ScannerUiState.QrPromoDetected -> {
-          Card(
-            modifier = Modifier
-              .align(Alignment.BottomCenter)
-              .fillMaxWidth()
-              .padding(14.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
+
+          is ScannerUiState.Matched -> {
+            Surface(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+                .testTag("scanner_matched_card"),
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.surface,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
               ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                  Icon(Icons.Rounded.LocalOffer, contentDescription = null, tint = EmeraldTrust, modifier = Modifier.size(18.dp))
-                  Text("QR Promo Code Detected", style = MaterialTheme.typography.titleMedium)
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  VerificationLabel(statusRaw = state.product.verificationStatus)
+                  Text(
+                    text = if (state.fromOfflineCache) "Offline Cache" else state.format.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
                 }
-                Text(state.format.label, style = MaterialTheme.typography.labelSmall, color = EmeraldTrust)
-              }
-              Surface(
-                color = EmeraldSoftTint,
-                shape = RoundedCornerShape(10.dp),
-              ) {
+                Text(state.product.name, style = MaterialTheme.typography.titleLarge)
                 Text(
-                  text = "Code: ${state.promoCode}",
-                  style = MaterialTheme.typography.titleMedium,
-                  color = DeepObsidian,
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                  text = listOfNotNull(
+                    state.product.brand.takeIf { it.isNotBlank() },
+                    state.barcode,
+                  ).joinToString(" · "),
+                  style = TabularDataStyle,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-              }
-              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                  onClick = { scannerViewModel.resetScanner() },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Text("Scan Next")
-                }
-                Button(
-                  onClick = {
-                    val hint = state.campaignHint ?: state.promoCode
-                    scannerViewModel.resetScanner()
-                    onShowMessage("Promo '$hint' applied to receipt claim.")
-                    onOpenRewardsOrPromo(state.campaignHint)
-                  },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Text("Claim Promo")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  AnimatedOutlinedButton(
+                    onClick = { scannerViewModel.resetScanner() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Scan Next")
+                  }
+                  AnimatedButton(
+                    onClick = {
+                      val code = state.barcode
+                      scannerViewModel.resetScanner()
+                      onOpenProductDetail(code)
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Text("Inspect Item")
+                  }
                 }
               }
             }
           }
-        }
-        is ScannerUiState.Error -> {
-          Card(
-            modifier = Modifier
-              .align(Alignment.BottomCenter)
-              .fillMaxWidth()
-              .padding(14.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
+
+          is ScannerUiState.NotFound -> {
+            Surface(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.surface,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
-              Text("Scanner Notice", style = MaterialTheme.typography.titleMedium)
-              Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                  onClick = { showManualDialog = true },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Text("Enter Manually")
-                }
-                Button(
-                  onClick = { scannerViewModel.resetScanner() },
-                  modifier = Modifier.weight(1f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Text("Try Again")
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+              ) {
+                Text("Not Found in Catalog", style = MaterialTheme.typography.titleMedium)
+                Text(
+                  text = "Barcode ${state.barcode} (${state.format.label}) was saved to History. You can add details or compare web prices.",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  AnimatedOutlinedButton(
+                    onClick = { scannerViewModel.resetScanner() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Text("Scan Again")
+                  }
+                  AnimatedButton(
+                    onClick = {
+                      val code = state.barcode
+                      scannerViewModel.resetScanner()
+                      onOpenProductDetail(code)
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Icon(Icons.Rounded.AddCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Product")
+                  }
                 }
               }
             }
           }
+
+          is ScannerUiState.QrUrlDetected -> {
+            Surface(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.surface,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text("QR Product Link", style = MaterialTheme.typography.titleMedium)
+                  Text(state.format.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                Text(
+                  text = state.url,
+                  style = TabularDataStyle,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  AnimatedOutlinedButton(
+                    onClick = { scannerViewModel.resetScanner() },
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Text("Dismiss")
+                  }
+                  if (!state.embeddedBarcode.isNullOrBlank()) {
+                    AnimatedButton(
+                      onClick = { scannerViewModel.lookupEmbeddedBarcode(state.embeddedBarcode) },
+                      modifier = Modifier.weight(1f),
+                      shape = RoundedCornerShape(10.dp),
+                    ) {
+                      Text("Inspect GTIN")
+                    }
+                  }
+                  AnimatedButton(
+                    onClick = {
+                      val target = state.url
+                      scannerViewModel.resetScanner()
+                      runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                      }.onFailure {
+                        onShowMessage("No browser available to open URL.")
+                      }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Open Link")
+                  }
+                }
+              }
+            }
+          }
+
+          is ScannerUiState.QrPromoDetected -> {
+            Surface(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.surface,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Rounded.LocalOffer, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Text("Promo Code Detected", style = MaterialTheme.typography.titleMedium)
+                  }
+                  Text(state.format.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                Surface(
+                  color = MaterialTheme.colorScheme.secondaryContainer,
+                  shape = RoundedCornerShape(8.dp),
+                ) {
+                  Text(
+                    text = "Code: ${state.promoCode}",
+                    style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                  )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  AnimatedOutlinedButton(
+                    onClick = { scannerViewModel.resetScanner() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Text("Dismiss")
+                  }
+                  AnimatedButton(
+                    onClick = {
+                      val hint = state.campaignHint ?: state.promoCode
+                      scannerViewModel.resetScanner()
+                      onShowMessage("Promo '$hint' applied to receipt claim.")
+                      onOpenRewardsOrPromo(state.campaignHint)
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Text("Claim Promo")
+                  }
+                }
+              }
+            }
+          }
+
+          is ScannerUiState.Error -> {
+            Surface(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.surface,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+              ) {
+                Text("Could Not Read Code", style = MaterialTheme.typography.titleMedium)
+                Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  AnimatedOutlinedButton(
+                    onClick = { showManualDialog = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Text("Enter Manually")
+                  }
+                  AnimatedButton(
+                    onClick = { scannerViewModel.resetScanner() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                  ) {
+                    Text("Try Again")
+                  }
+                }
+              }
+            }
+          }
+
+          ScannerUiState.Idle -> Unit
         }
-        ScannerUiState.Idle -> Unit
       }
     }
 
-    // Quick Manual / Photo / Sample Barcode Bar
+    // Bottom Action Bar + Sample Test Barcodes
     Column(
       modifier = Modifier
         .fillMaxWidth()
@@ -758,20 +991,20 @@ fun ScanScreen(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        OutlinedButton(
+        AnimatedOutlinedButton(
           onClick = { showManualDialog = true },
           modifier = Modifier
             .weight(1f)
             .testTag("scanner_manual_entry_button"),
-          shape = RoundedCornerShape(12.dp),
-          border = BorderStroke(1.dp, ObsidianDivider),
+          shape = RoundedCornerShape(10.dp),
+          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.24f)),
           contentPadding = PaddingValues(vertical = 10.dp),
         ) {
-          Icon(Icons.Rounded.Edit, contentDescription = null, tint = ElectricLime, modifier = Modifier.size(16.dp))
+          Icon(Icons.Rounded.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(6.dp))
           Text("Manual GTIN", color = Color.White)
         }
-        OutlinedButton(
+        AnimatedOutlinedButton(
           onClick = {
             photoPickerLauncher.launch(
               PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
@@ -780,8 +1013,8 @@ fun ScanScreen(
           modifier = Modifier
             .weight(1f)
             .testTag("scanner_photo_button"),
-          shape = RoundedCornerShape(12.dp),
-          border = BorderStroke(1.dp, ObsidianDivider),
+          shape = RoundedCornerShape(10.dp),
+          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.24f)),
           contentPadding = PaddingValues(vertical = 10.dp),
         ) {
           Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
@@ -795,29 +1028,29 @@ fun ScanScreen(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text("Sample:", style = MaterialTheme.typography.labelSmall, color = ObsidianMutedText)
+        Text("Sample:", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
         val sampleSpecs = listOf(
-          Triple("3017620422003", "Nutella", SupportedBarcodeFormat.EAN_13) to ElectricLime,
-          Triple("https://world.openfoodfacts.org/product/5449000000996", "QR URL", SupportedBarcodeFormat.QR_CODE) to Color(0xFF60A5FA),
-          Triple("PROMO:BONUS100", "QR Promo", SupportedBarcodeFormat.QR_CODE) to Color(0xFFFBBF24),
+          Triple("3017620422003", "Nutella", SupportedBarcodeFormat.EAN_13),
+          Triple("https://world.openfoodfacts.org/product/5449000000996", "QR URL", SupportedBarcodeFormat.QR_CODE),
+          Triple("PROMO:BONUS100", "QR Promo", SupportedBarcodeFormat.QR_CODE),
         )
-        sampleSpecs.forEach { (triple, pillTint) ->
-          val (code, label, fmt) = triple
+        sampleSpecs.forEach { (code, label, fmt) ->
           Surface(
             modifier = Modifier
-              .clickable {
+              .clip(RoundedCornerShape(999.dp))
+              .bounceClickable {
                 scannerViewModel.processScannedBarcode(code, fmt, fromCamera = false)
               }
               .testTag("sample_scan_$label"),
-            color = pillTint.copy(alpha = 0.18f),
-            shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, pillTint.copy(alpha = 0.45f)),
+            color = ViewfinderSurface,
+            shape = RoundedCornerShape(999.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
           ) {
             Text(
               text = label,
               style = MaterialTheme.typography.labelSmall,
-              color = pillTint,
-              modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+              color = Color.White,
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             )
           }
         }
@@ -832,7 +1065,7 @@ fun ScanScreen(
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(
-            "Supports EAN-13, EAN-8, UPC-A, UPC-E (with GS1 Modulo-10 validation), Code 128, or QR.",
+            "Supports EAN-13, EAN-8, UPC-A, UPC-E (with Modulo-10 check), Code 128, or QR.",
             style = MaterialTheme.typography.bodySmall,
           )
           OutlinedTextField(
@@ -846,7 +1079,7 @@ fun ScanScreen(
         }
       },
       confirmButton = {
-        Button(
+        AnimatedButton(
           onClick = {
             showManualDialog = false
             scannerViewModel.processScannedBarcode(
@@ -856,11 +1089,11 @@ fun ScanScreen(
             )
           },
         ) {
-          Text("Lookup")
+          Text("Look Up")
         }
       },
       dismissButton = {
-        TextButton(onClick = { showManualDialog = false }) { Text("Cancel") }
+        AnimatedTextButton(onClick = { showManualDialog = false }) { Text("Cancel") }
       },
     )
   }
@@ -880,16 +1113,19 @@ private fun CameraXBarcodeViewfinder(
   val previewView = remember {
     PreviewView(context).apply {
       scaleType = PreviewView.ScaleType.FILL_CENTER
-      implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+      implementationMode = PreviewView.ImplementationMode.PERFORMANCE
     }
   }
   val pausedState = remember { mutableStateOf(paused) }
   pausedState.value = paused
+  val latestOnBarcodeDetected by rememberUpdatedState(onBarcodeDetected)
+  val isProcessingFrame = remember { AtomicBoolean(false) }
 
   DisposableEffect(lifecycleOwner) {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
     val mainExecutor = ContextCompat.getMainExecutor(context)
     var providerRef: ProcessCameraProvider? = null
+    var lastAnalyzedMs = 0L
 
     cameraProviderFuture.addListener(
       {
@@ -915,12 +1151,14 @@ private fun CameraXBarcodeViewfinder(
             .build()
 
           imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
-            if (pausedState.value) {
+            val nowMs = android.os.SystemClock.elapsedRealtime()
+            if (pausedState.value || (nowMs - lastAnalyzedMs) < 110L || !isProcessingFrame.compareAndSet(false, true)) {
               imageProxy.close()
               return@setAnalyzer
             }
             val mediaImage = imageProxy.image
             if (mediaImage != null) {
+              lastAnalyzedMs = nowMs
               val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
               scanner.process(inputImage)
                 .addOnSuccessListener { barcodes ->
@@ -928,11 +1166,15 @@ private fun CameraXBarcodeViewfinder(
                   if (match != null) {
                     val value = match.rawValue.orEmpty()
                     val fmt = SupportedBarcodeFormat.fromMlKitFormat(match.format)
-                    mainExecutor.execute { onBarcodeDetected(value, fmt) }
+                    mainExecutor.execute { latestOnBarcodeDetected(value, fmt) }
                   }
                 }
-                .addOnCompleteListener { imageProxy.close() }
+                .addOnCompleteListener {
+                  isProcessingFrame.set(false)
+                  imageProxy.close()
+                }
             } else {
+              isProcessingFrame.set(false)
               imageProxy.close()
             }
           }
@@ -963,116 +1205,290 @@ private fun CameraXBarcodeViewfinder(
 
 @Composable
 private fun ScanningReticleOverlay(
-  isActive: Boolean,
+  isLiveScanning: Boolean,
+  isProcessingScan: Boolean,
+  detectionLaserProgress: Float,
   detectionRippleProgress: Float,
+  isDetectionLocked: Boolean,
   reducedMotion: Boolean,
   modifier: Modifier = Modifier,
 ) {
-  val scanProgress = if (isActive && !reducedMotion) {
-    val transition = rememberInfiniteTransition(label = "scanLaser")
-    val anim by transition.animateFloat(
-      initialValue = 0.06f,
-      targetValue = 0.94f,
+  val infiniteTransition = rememberInfiniteTransition(label = "scanningOverlay")
+
+  val sweepPhase = if ((isLiveScanning || isProcessingScan) && !reducedMotion) {
+    val phase by infiniteTransition.animateFloat(
+      initialValue = 0f,
+      targetValue = 1f,
       animationSpec = infiniteRepeatable(
-        animation = tween(durationMillis = 1900, easing = LinearEasing),
-        repeatMode = RepeatMode.Reverse,
+        animation = tween(durationMillis = 2200, easing = LinearEasing),
+        repeatMode = RepeatMode.Restart,
       ),
-      label = "laserY",
+      label = "harmonicSweepPhase",
     )
-    anim
+    phase
   } else {
-    0.5f
+    0.25f
   }
 
+  val orbitPhase = if (isProcessingScan && !reducedMotion) {
+    val phase by infiniteTransition.animateFloat(
+      initialValue = 0f,
+      targetValue = 1f,
+      animationSpec = infiniteRepeatable(
+        animation = tween(durationMillis = 1150, easing = LinearEasing),
+        repeatMode = RepeatMode.Restart,
+      ),
+      label = "processingOrbitPhase",
+    )
+    phase
+  } else {
+    0f
+  }
+
+  val isLocked = isDetectionLocked || detectionRippleProgress > 0f || detectionLaserProgress > 0f
+
+  val activeAccentColor by animateColorAsState(
+    targetValue = when {
+      isLocked -> LedgerJadeDark
+      isProcessingScan -> SignalIndigoDark
+      else -> ReticleAmber
+    },
+    animationSpec = tween(durationMillis = if (reducedMotion) 0 else 200),
+    label = "reticleAccentColor",
+  )
+
+  val lockInsetFraction by animateFloatAsState(
+    targetValue = if (isLocked) 1f else 0f,
+    animationSpec = tween(durationMillis = if (reducedMotion) 0 else 180, easing = FastOutSlowInEasing),
+    label = "reticleLockInset",
+  )
+
+  val scrimPath = remember { Path().apply { fillType = PathFillType.EvenOdd } }
+  val reticleOutlinePath = remember { Path() }
+  val orbitSegmentPath = remember { Path() }
+  val pathMeasure = remember { PathMeasure() }
+
   Canvas(modifier = modifier) {
-    val boxW = size.width * 0.76f
-    val boxH = size.height * 0.44f
+    val lockInset = 4.dp.toPx() * lockInsetFraction
+    val boxW = (size.width * 0.78f) - (lockInset * 2f)
+    val boxH = (size.height * 0.44f) - (lockInset * 2f)
     val left = (size.width - boxW) / 2f
     val top = (size.height - boxH) / 2f
     val right = left + boxW
     val bottom = top + boxH
+    val radius = 14.dp.toPx()
     val corner = 24.dp.toPx()
 
-    // Subtle obsidian scrim outside scan frame
-    drawRect(color = Color(0xFF060A09).copy(alpha = 0.28f))
-
-    // Reticle frame border
-    val isLocked = detectionRippleProgress > 0f
-    drawRect(
-      color = if (isLocked) ElectricLime.copy(alpha = 0.72f) else Color.White.copy(alpha = 0.28f),
-      topLeft = Offset(left, top),
-      size = androidx.compose.ui.geometry.Size(boxW, boxH),
-      style = Stroke(width = if (isLocked) 2.5.dp.toPx() else 1.5.dp.toPx()),
+    // Optical cutout scrim: dims exterior while keeping the reticle window crystal clear
+    scrimPath.reset()
+    scrimPath.addRect(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height))
+    scrimPath.addRoundRect(
+      RoundRect(
+        left = left,
+        top = top,
+        right = right,
+        bottom = bottom,
+        cornerRadius = CornerRadius(radius, radius),
+      ),
+    )
+    drawPath(
+      path = scrimPath,
+      color = ViewfinderVoid.copy(alpha = if (isProcessingScan) 0.56f else 0.42f),
     )
 
-    // Electric Lime corner brackets
-    val strokeW = 3.5.dp.toPx()
-    val bracketColor = ElectricLime
-    // Top-left
-    drawLine(bracketColor, Offset(left, top), Offset(left + corner, top), strokeW)
-    drawLine(bracketColor, Offset(left, top), Offset(left, top + corner), strokeW)
-    // Top-right
-    drawLine(bracketColor, Offset(right - corner, top), Offset(right, top), strokeW)
-    drawLine(bracketColor, Offset(right, top), Offset(right, top + corner), strokeW)
-    // Bottom-left
-    drawLine(bracketColor, Offset(left, bottom), Offset(left + corner, bottom), strokeW)
-    drawLine(bracketColor, Offset(left, bottom - corner), Offset(left, bottom), strokeW)
-    // Bottom-right
-    drawLine(bracketColor, Offset(right - corner, bottom), Offset(right, bottom), strokeW)
-    drawLine(bracketColor, Offset(right, bottom - corner), Offset(right, bottom), strokeW)
+    reticleOutlinePath.reset()
+    reticleOutlinePath.addRoundRect(
+      RoundRect(
+        left = left,
+        top = top,
+        right = right,
+        bottom = bottom,
+        cornerRadius = CornerRadius(radius, radius),
+      ),
+    )
 
-    // Subtle animated scanning laser line inside the camera frame
-    if (isActive) {
-      val lineY = top + (boxH * scanProgress)
-      drawRect(
-        brush = Brush.verticalGradient(
-          colors = listOf(Color.Transparent, ElectricLime.copy(alpha = 0.22f), Color.Transparent),
-          startY = lineY - 14.dp.toPx(),
-          endY = lineY + 14.dp.toPx(),
-        ),
-        topLeft = Offset(left + 6.dp.toPx(), lineY - 14.dp.toPx()),
-        size = androidx.compose.ui.geometry.Size(boxW - 12.dp.toPx(), 28.dp.toPx()),
+    if (isLocked) {
+      val flashAlpha = if (detectionLaserProgress > 0f) {
+        (1f - detectionLaserProgress).coerceIn(0f, 1f) * 0.24f
+      } else {
+        0.16f
+      }
+      drawPath(
+        path = reticleOutlinePath,
+        color = LedgerJadeDark.copy(alpha = flashAlpha),
       )
-      drawLine(
-        brush = Brush.horizontalGradient(
-          colors = listOf(Color.Transparent, ElectricLime, Color.Transparent),
-          startX = left + 8.dp.toPx(),
-          endX = right - 8.dp.toPx(),
-        ),
-        start = Offset(left + 8.dp.toPx(), lineY),
-        end = Offset(right - 8.dp.toPx(), lineY),
-        strokeWidth = 2.5.dp.toPx(),
+    } else if (isProcessingScan) {
+      drawPath(
+        path = reticleOutlinePath,
+        color = SignalIndigoDark.copy(alpha = 0.08f),
       )
     }
 
-    // Detection ripple animation expanding outward on barcode lock
+    // Fine reticle glass border
+    drawPath(
+      path = reticleOutlinePath,
+      color = if (isLocked) LedgerJadeDark.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.24f),
+      style = Stroke(width = if (isLocked) 2.2.dp.toPx() else 1.dp.toPx()),
+    )
+
+    // Smooth dual-segment perimeter orbit while a scan/lookup is actively in progress
+    if (isProcessingScan && !isLocked && !reducedMotion) {
+      pathMeasure.setPath(reticleOutlinePath, forceClosed = true)
+      val totalLength = pathMeasure.length
+      if (totalLength > 0f) {
+        val segLen = totalLength * 0.22f
+        val startA = orbitPhase * totalLength
+        val endA = startA + segLen
+
+        orbitSegmentPath.reset()
+        if (endA <= totalLength) {
+          pathMeasure.getSegment(startA, endA, orbitSegmentPath, true)
+        } else {
+          pathMeasure.getSegment(startA, totalLength, orbitSegmentPath, true)
+          pathMeasure.getSegment(0f, endA - totalLength, orbitSegmentPath, true)
+        }
+        drawPath(
+          path = orbitSegmentPath,
+          color = SignalIndigoDark,
+          style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round),
+        )
+
+        val startB = ((orbitPhase + 0.5f) % 1f) * totalLength
+        val endB = startB + segLen
+        orbitSegmentPath.reset()
+        if (endB <= totalLength) {
+          pathMeasure.getSegment(startB, endB, orbitSegmentPath, true)
+        } else {
+          pathMeasure.getSegment(startB, totalLength, orbitSegmentPath, true)
+          pathMeasure.getSegment(0f, endB - totalLength, orbitSegmentPath, true)
+        }
+        drawPath(
+          path = orbitSegmentPath,
+          color = LedgerJadeDark.copy(alpha = 0.9f),
+          style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round),
+        )
+      }
+    }
+
+    // Precision corner brackets
+    val strokeW = if (isLocked) 3.8.dp.toPx() else 3.2.dp.toPx()
+    val bracketAlpha = if (isLiveScanning && !reducedMotion && !isLocked) {
+      0.82f + 0.18f * abs(sin(sweepPhase * 2f * PI.toFloat()))
+    } else {
+      1f
+    }
+    val bracketColor = activeAccentColor.copy(alpha = bracketAlpha)
+    drawLine(bracketColor, Offset(left, top + radius * 0.35f), Offset(left, top + corner), strokeW, cap = StrokeCap.Round)
+    drawLine(bracketColor, Offset(left + radius * 0.35f, top), Offset(left + corner, top), strokeW, cap = StrokeCap.Round)
+    drawLine(bracketColor, Offset(right - corner, top), Offset(right - radius * 0.35f, top), strokeW, cap = StrokeCap.Round)
+    drawLine(bracketColor, Offset(right, top + radius * 0.35f), Offset(right, top + corner), strokeW, cap = StrokeCap.Round)
+    drawLine(bracketColor, Offset(left + radius * 0.35f, bottom), Offset(left + corner, bottom), strokeW, cap = StrokeCap.Round)
+    drawLine(bracketColor, Offset(left, bottom - corner), Offset(left, bottom - radius * 0.35f), strokeW, cap = StrokeCap.Round)
+    drawLine(bracketColor, Offset(right - corner, bottom), Offset(right - radius * 0.35f, bottom), strokeW, cap = StrokeCap.Round)
+    drawLine(bracketColor, Offset(right, bottom - corner), Offset(right, bottom - radius * 0.35f), strokeW, cap = StrokeCap.Round)
+
+    // Subtle side alignment ticks
+    val tickLen = 7.dp.toPx()
+    val midY = top + boxH / 2f
+    drawLine(Color.White.copy(alpha = 0.36f), Offset(left, midY), Offset(left + tickLen, midY), 1.4.dp.toPx(), cap = StrokeCap.Round)
+    drawLine(Color.White.copy(alpha = 0.36f), Offset(right - tickLen, midY), Offset(right, midY), 1.4.dp.toPx(), cap = StrokeCap.Round)
+
+    // Smooth harmonic optical laser sweep with directional glow trail
+    if ((isLiveScanning || isProcessingScan) && !isLocked) {
+      val angle = sweepPhase * 2f * PI.toFloat()
+      val yNorm = if (reducedMotion) 0.5f else (0.5f - 0.5f * cos(angle))
+      val scanY = top + 12.dp.toPx() + (boxH - 24.dp.toPx()) * yNorm
+      val movingDown = sweepPhase < 0.5f
+      val speedFactor = if (reducedMotion) 0.4f else abs(sin(angle)).coerceIn(0.25f, 1f)
+      val trailHeight = (30.dp.toPx() * speedFactor).coerceAtLeast(10.dp.toPx())
+
+      val beamColor = if (isProcessingScan) SignalIndigoDark else ReticleAmber
+      val trailTop = if (movingDown) scanY - trailHeight else scanY
+      val trailBottom = if (movingDown) scanY else scanY + trailHeight
+      val trailColors = if (movingDown) {
+        listOf(Color.Transparent, beamColor.copy(alpha = 0.26f * speedFactor))
+      } else {
+        listOf(beamColor.copy(alpha = 0.26f * speedFactor), Color.Transparent)
+      }
+
+      if (!reducedMotion) {
+        drawRect(
+          brush = Brush.verticalGradient(
+            colors = trailColors,
+            startY = trailTop,
+            endY = trailBottom,
+          ),
+          topLeft = Offset(left + 10.dp.toPx(), trailTop),
+          size = androidx.compose.ui.geometry.Size(boxW - 20.dp.toPx(), trailHeight),
+        )
+      }
+
+      // Soft bloom around laser core
+      drawLine(
+        brush = Brush.horizontalGradient(
+          colors = listOf(Color.Transparent, beamColor.copy(alpha = 0.45f), beamColor.copy(alpha = 0.45f), Color.Transparent),
+          startX = left + 8.dp.toPx(),
+          endX = right - 8.dp.toPx(),
+        ),
+        start = Offset(left + 8.dp.toPx(), scanY),
+        end = Offset(right - 8.dp.toPx(), scanY),
+        strokeWidth = 6.dp.toPx(),
+        cap = StrokeCap.Round,
+      )
+
+      // Sharp optical laser core
+      drawLine(
+        brush = Brush.horizontalGradient(
+          colors = listOf(Color.Transparent, beamColor, Color.White, beamColor, Color.Transparent),
+          startX = left + 8.dp.toPx(),
+          endX = right - 8.dp.toPx(),
+        ),
+        start = Offset(left + 8.dp.toPx(), scanY),
+        end = Offset(right - 8.dp.toPx(), scanY),
+        strokeWidth = 2.4.dp.toPx(),
+        cap = StrokeCap.Round,
+      )
+    }
+
+    // Rapid detection confirmation beam
+    if (detectionLaserProgress > 0f) {
+      val sweepFraction = if (detectionLaserProgress <= 0.5f) {
+        detectionLaserProgress * 2f
+      } else {
+        1f - ((detectionLaserProgress - 0.5f) * 2f)
+      }.coerceIn(0.06f, 0.94f)
+      val lockY = top + (boxH * sweepFraction)
+      drawLine(
+        brush = Brush.horizontalGradient(
+          colors = listOf(Color.Transparent, Color.White, LedgerJadeDark, Color.White, Color.Transparent),
+          startX = left + 8.dp.toPx(),
+          endX = right - 8.dp.toPx(),
+        ),
+        start = Offset(left + 8.dp.toPx(), lockY),
+        end = Offset(right - 8.dp.toPx(), lockY),
+        strokeWidth = 3.5.dp.toPx(),
+        cap = StrokeCap.Round,
+      )
+    }
+
+    // Expanding detection lock halo
     if (detectionRippleProgress > 0f) {
       val center = Offset(size.width / 2f, size.height / 2f)
       val maxRadius = minOf(boxW, boxH) * 0.72f
       val outerRadius = maxRadius * detectionRippleProgress
-      val innerRadius = maxRadius * (detectionRippleProgress * 0.65f)
-      val outerAlpha = (1f - detectionRippleProgress).coerceIn(0f, 1f) * 0.78f
-      val innerAlpha = (1f - detectionRippleProgress * 0.7f).coerceIn(0f, 1f) * 0.55f
+      val outerAlpha = (1f - detectionRippleProgress).coerceIn(0f, 1f) * 0.8f
 
       drawCircle(
-        color = ElectricLime.copy(alpha = outerAlpha * 0.2f),
+        color = LedgerJadeDark.copy(alpha = outerAlpha * 0.2f),
         radius = outerRadius,
         center = center,
       )
       drawCircle(
-        color = ElectricLime.copy(alpha = outerAlpha),
+        color = LedgerJadeDark.copy(alpha = outerAlpha),
         radius = outerRadius,
         center = center,
         style = Stroke(width = 3.dp.toPx()),
       )
-      if (innerRadius > 4f) {
-        drawCircle(
-          color = EmeraldSoftTint.copy(alpha = innerAlpha),
-          radius = innerRadius,
-          center = center,
-          style = Stroke(width = 2.dp.toPx()),
-        )
-      }
     }
   }
 }
