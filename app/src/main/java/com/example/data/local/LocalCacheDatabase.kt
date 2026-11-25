@@ -121,6 +121,9 @@ interface CachedProductDao {
   @Query("SELECT * FROM cached_products WHERE name LIKE '%' || :query || '%' OR brand LIKE '%' || :query || '%' OR barcode LIKE '%' || :query || '%' ORDER BY updatedAtMs DESC LIMIT 30")
   suspend fun search(query: String): List<CachedProductEntity>
 
+  @Query("SELECT COUNT(*) FROM cached_products")
+  suspend fun count(): Int
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun upsertAll(items: List<CachedProductEntity>)
 }

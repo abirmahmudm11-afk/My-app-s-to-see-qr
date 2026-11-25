@@ -135,6 +135,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
             displayName = user.displayName ?: user.email?.substringBefore("@") ?: "Shopper",
             countryCode = prefs.countryCode,
             languageCode = prefs.languageCode,
+            darkThemeEnabled = prefs.darkThemeEnabled,
           )
         }
         adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
@@ -146,6 +147,9 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
 
   init {
     container.auth.addAuthStateListener(authListener)
+    viewModelScope.launch {
+      runCatching { container.productRepository.preloadLiveCatalog() }
+    }
     container.auth.currentUser?.let { existing ->
       viewModelScope.launch {
         runCatching {
@@ -155,6 +159,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
             displayName = existing.displayName ?: existing.email?.substringBefore("@") ?: "Shopper",
             countryCode = prefs.countryCode,
             languageCode = prefs.languageCode,
+            darkThemeEnabled = prefs.darkThemeEnabled,
           )
         }
         adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
@@ -414,6 +419,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
         displayName = user.displayName ?: user.email?.substringBefore("@") ?: "Shopper",
         countryCode = prefs.countryCode,
         languageCode = prefs.languageCode,
+        darkThemeEnabled = prefs.darkThemeEnabled,
       )
     }
     adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
@@ -499,6 +505,37 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
         }
       searchResultsFlow.value = res.products
       searchErrorFlow.value = res.errorMessage
+      isSearchingFlow.value = false
+    }
+  }
+
+  fun filterCatalogCategory(categoryTag: String?, fallbackKeyword: String) {
+    if (categoryTag.isNullOrBlank()) {
+      searchResultsFlow.value = emptyList()
+      searchErrorFlow.value = null
+      return
+    }
+    viewModelScope.launch {
+      isSearchingFlow.value = true
+      searchErrorFlow.value = null
+      val res = runCatching {
+        container.productRepository.searchByCategory(categoryTag, fallbackKeyword)
+      }.getOrElse { err ->
+        com.example.data.repository.CatalogSearchResult(
+          products = emptyList(),
+          errorMessage = err.message ?: "Category lookup failed.",
+        )
+      }
+      searchResultsFlow.value = res.products
+      searchErrorFlow.value = res.errorMessage
+      isSearchingFlow.value = false
+    }
+  }
+
+  fun refreshLiveCatalog() {
+    viewModelScope.launch {
+      isSearchingFlow.value = true
+      runCatching { container.productRepository.preloadLiveCatalog(forceRefresh = true) }
       isSearchingFlow.value = false
     }
   }
@@ -644,6 +681,14 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
       }.onFailure {
         feedbackMessageFlow.value = it.message ?: "Campaign creation failed."
       }
+    }
+  }
+
+  fun seedStarterCampaigns() {
+    viewModelScope.launch {
+      runCatching { container.adminRepository.seedStarterCampaigns() }
+        .onSuccess { feedbackMessageFlow.value = "Published 3 starter partner campaigns." }
+        .onFailure { feedbackMessageFlow.value = it.message ?: "Failed to seed starter campaigns." }
     }
   }
 

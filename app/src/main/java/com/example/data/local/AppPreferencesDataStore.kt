@@ -29,7 +29,7 @@ class AppPreferencesDataStore(private val context: Context) {
       countryCode = prefs[Keys.COUNTRY_CODE] ?: "US",
       languageCode = prefs[Keys.LANGUAGE_CODE] ?: "en",
       marketingConsent = prefs[Keys.MARKETING_CONSENT] ?: false,
-      darkThemeEnabled = prefs[Keys.DARK_THEME] ?: false,
+      darkThemeEnabled = prefs[Keys.DARK_THEME] ?: true,
       reducedMotionEnabled = prefs[Keys.REDUCED_MOTION] ?: false,
     )
   }

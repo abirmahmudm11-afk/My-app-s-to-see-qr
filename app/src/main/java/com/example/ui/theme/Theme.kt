@@ -48,17 +48,17 @@ private val LightColorScheme = lightColorScheme(
 
 private val DarkColorScheme = darkColorScheme(
   primary = SignalIndigoDark,
-  onPrimary = InkPrimary,
+  onPrimary = MintOnDarkText,
   primaryContainer = SignalIndigoDarkContainer,
-  onPrimaryContainer = CarbonInkPrimary,
+  onPrimaryContainer = SignalIndigoDark,
   secondary = LedgerJadeDark,
-  onSecondary = InkPrimary,
+  onSecondary = MintOnDarkText,
   secondaryContainer = LedgerJadeDarkContainer,
-  onSecondaryContainer = CarbonInkPrimary,
+  onSecondaryContainer = LedgerJadeDark,
   tertiary = PrecisionAmberDark,
   onTertiary = ReticleAmberText,
   tertiaryContainer = PrecisionAmberDarkContainer,
-  onTertiaryContainer = CarbonInkPrimary,
+  onTertiaryContainer = PrecisionAmberDark,
   background = CarbonCanvas,
   onBackground = CarbonInkPrimary,
   surface = CarbonSurface,
@@ -72,18 +72,17 @@ private val DarkColorScheme = darkColorScheme(
   onErrorContainer = CarbonInkPrimary,
 )
 
-// Tight architectural radii (12-16dp cards, 8dp controls, never over-rounded 30dp bubbles)
 val Scan2MoneyShapes = Shapes(
-  extraSmall = RoundedCornerShape(6.dp),
-  small = RoundedCornerShape(8.dp),
-  medium = RoundedCornerShape(12.dp),
-  large = RoundedCornerShape(16.dp),
-  extraLarge = RoundedCornerShape(20.dp),
+  extraSmall = RoundedCornerShape(8.dp),
+  small = RoundedCornerShape(10.dp),
+  medium = RoundedCornerShape(14.dp),
+  large = RoundedCornerShape(18.dp),
+  extraLarge = RoundedCornerShape(24.dp),
 )
 
 @Composable
 fun Scan2MoneyTheme(
-  darkTheme: Boolean = false,
+  darkTheme: Boolean = true,
   reducedMotion: Boolean = false,
   content: @Composable () -> Unit,
 ) {

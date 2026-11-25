@@ -162,6 +162,70 @@ class ProductRepository(
     ProductLookupOutcome.NotFound(clean)
   }
 
+  suspend fun preloadLiveCatalog(forceRefresh: Boolean = false) = withContext(Dispatchers.IO) {
+    val existingCount = runCatching { cachedProductDao.count() }.getOrDefault(0)
+    if (existingCount == 0 || forceRefresh) {
+      cachedProductDao.upsertAll(curatedCatalogEntries.map { CachedProductEntity.fromCatalogProduct(it.first) })
+    }
+    if (existingCount >= 12 && !forceRefresh) return@withContext
+
+    runCatching {
+      val response = withTimeoutOrNull(6_000L) {
+        api.searchProductsV2(searchTerms = "", sortBy = "unique_scans_n", pageSize = 24)
+      }
+      val liveProducts = response?.products
+        ?.mapNotNull { dto ->
+          val code = dto.code?.trim().orEmpty()
+          if (code.isEmpty()) null else mapOffDto(code, dto)
+        }
+        ?.filter { it.name.isNotBlank() && it.imageUrl.isNotBlank() }
+        .orEmpty()
+      if (liveProducts.isNotEmpty()) {
+        cachedProductDao.upsertAll(liveProducts.map { CachedProductEntity.fromCatalogProduct(it) })
+      }
+    }
+  }
+
+  suspend fun searchByCategory(categoryTag: String, fallbackKeyword: String): CatalogSearchResult = withContext(Dispatchers.IO) {
+    var remoteError: String? = null
+    val remoteList = try {
+      val v2 = withTimeoutOrNull(5_500L) {
+        api.searchProductsV2(
+          searchTerms = "",
+          categoriesTagsEn = categoryTag,
+          sortBy = "unique_scans_n",
+          pageSize = 24,
+        ).products.mapNotNull { dto ->
+          val code = dto.code?.trim().orEmpty()
+          if (code.isEmpty()) null else mapOffDto(code, dto)
+        }
+      }
+      v2.orEmpty()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      remoteError = e.message ?: "Unable to reach live category catalog."
+      emptyList()
+    }
+
+    if (remoteList.isNotEmpty()) {
+      cachedProductDao.upsertAll(remoteList.map { CachedProductEntity.fromCatalogProduct(it) })
+      return@withContext CatalogSearchResult(products = remoteList)
+    }
+
+    val cachedMatches = cachedProductDao.search(fallbackKeyword).map { it.toCatalogProduct() }
+    if (cachedMatches.isNotEmpty()) {
+      return@withContext CatalogSearchResult(products = cachedMatches, fromOfflineCache = true)
+    }
+
+    val curatedMatches = curatedFallbackSearch(fallbackKeyword)
+    if (curatedMatches.isNotEmpty()) {
+      return@withContext CatalogSearchResult(products = curatedMatches, fromOfflineCache = true)
+    }
+
+    CatalogSearchResult(products = emptyList(), errorMessage = remoteError)
+  }
+
   suspend fun searchCatalog(query: String): CatalogSearchResult = withContext(Dispatchers.IO) {
     val clean = query.trim()
     if (clean.isEmpty()) return@withContext CatalogSearchResult(emptyList())
@@ -183,7 +247,7 @@ class ProductRepository(
     var remoteError: String? = null
     val remoteList = try {
       val v2 = withTimeoutOrNull(5_000L) {
-        api.searchProductsV2(clean).products.mapNotNull { dto ->
+        api.searchProductsV2(searchTerms = clean).products.mapNotNull { dto ->
           val code = dto.code?.trim().orEmpty()
           if (code.isEmpty()) null else mapOffDto(code, dto)
         }
@@ -565,12 +629,12 @@ class ProductRepository(
         name = "Nutella Hazelnut Spread with Cocoa",
         brand = "Ferrero",
         category = "Breakfast Spreads",
-        description = "Hazelnut spread with cocoa • Size: 400 g\nIngredients: Sugar, palm oil, hazelnuts (13%), skimmed milk powder (8.7%), fat-reduced cocoa (7.4%), emulsifier, vanillin.",
-        imageUrl = "",
+        description = "Hazelnut spread with cocoa · Size: 400 g\nIngredients: Sugar, palm oil, hazelnuts (13%), skimmed milk powder (8.7%), fat-reduced cocoa (7.4%), emulsifier, vanillin.",
+        imageUrl = "https://images.openfoodfacts.org/images/products/301/762/042/2003/front_en.633.400.jpg",
         manufacturer = "Ferrero",
         countryOfOrigin = "Italy",
-        dataProvider = "Open Food Facts (Cached)",
-        attributionText = "Offline fallback © Open Food Facts contributors (ODbL)",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
         verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
         submittedBy = "openfoodfacts",
       ) to ProductApiMetadata(
@@ -585,13 +649,13 @@ class ProductRepository(
         barcode = "5449000000996",
         name = "Coca-Cola Original Taste",
         brand = "Coca-Cola",
-        category = "Carbonated Soft Drinks",
-        description = "Sparkling soft drink • Size: 330 ml\nIngredients: Carbonated water, sugar, caramel color, phosphoric acid, natural flavorings including caffeine.",
-        imageUrl = "",
+        category = "Beverages",
+        description = "Sparkling soft drink · Size: 330 ml\nIngredients: Carbonated water, sugar, caramel color, phosphoric acid, natural flavorings including caffeine.",
+        imageUrl = "https://images.openfoodfacts.org/images/products/544/900/000/0996/front_en.906.400.jpg",
         manufacturer = "Coca-Cola Europacific Partners",
         countryOfOrigin = "United States",
-        dataProvider = "Open Food Facts (Cached)",
-        attributionText = "Offline fallback © Open Food Facts contributors (ODbL)",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
         verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
         submittedBy = "openfoodfacts",
       ) to ProductApiMetadata(
@@ -602,17 +666,122 @@ class ProductRepository(
         packaging = "Aluminum can",
       ),
       CatalogProduct(
+        id = "3068320115160",
+        barcode = "3068320115160",
+        name = "Evian Natural Mineral Water",
+        brand = "Evian",
+        category = "Beverages",
+        description = "Pure alpine natural spring water bottled at source in Évian-les-Bains · Size: 1.5 L.",
+        imageUrl = "https://images.openfoodfacts.org/images/products/306/832/011/5160/front_fr.198.400.jpg",
+        manufacturer = "Danone Waters",
+        countryOfOrigin = "France",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
+        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
+        submittedBy = "openfoodfacts",
+      ) to ProductApiMetadata(
+        quantity = "1.5 L",
+        nutriscoreGrade = "A",
+        ecoscoreGrade = "B",
+        stores = listOf("Whole Foods", "Carrefour", "Target"),
+        packaging = "Recyclable PET bottle",
+      ),
+      CatalogProduct(
+        id = "7622210449283",
+        barcode = "7622210449283",
+        name = "Prince Chocolate Cream Biscuits",
+        brand = "LU",
+        category = "Snacks",
+        description = "Whole wheat crispy sandwich biscuits filled with milk chocolate cream · Size: 300 g.",
+        imageUrl = "https://images.openfoodfacts.org/images/products/762/221/044/9283/front_fr.541.400.jpg",
+        manufacturer = "Mondelez International",
+        countryOfOrigin = "Belgium",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
+        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
+        submittedBy = "openfoodfacts",
+      ) to ProductApiMetadata(
+        quantity = "300 g",
+        nutriscoreGrade = "D",
+        ecoscoreGrade = "D",
+        stores = listOf("Carrefour", "Auchan", "Amazon Fresh"),
+        packaging = "Recyclable wrapper",
+      ),
+      CatalogProduct(
+        id = "8076800195057",
+        barcode = "8076800195057",
+        name = "Barilla Spaghetti N°5",
+        brand = "Barilla",
+        category = "Organic & Pantry",
+        description = "Classic Italian durum wheat semolina spaghetti · Size: 500 g.",
+        imageUrl = "https://images.openfoodfacts.org/images/products/807/680/019/5057/front_it.344.400.jpg",
+        manufacturer = "Barilla G. e R. Fratelli",
+        countryOfOrigin = "Italy",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
+        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
+        submittedBy = "openfoodfacts",
+      ) to ProductApiMetadata(
+        quantity = "500 g",
+        nutriscoreGrade = "A",
+        ecoscoreGrade = "B",
+        stores = listOf("Walmart", "Target", "Whole Foods", "Carrefour"),
+        packaging = "Paperboard box",
+      ),
+      CatalogProduct(
+        id = "7394376616013",
+        barcode = "7394376616013",
+        name = "Oatly Oat Drink Barista Edition",
+        brand = "Oatly",
+        category = "Dairy & Plant-Based",
+        description = "Creamy foamable plant-based oat drink fortified with calcium and vitamins D2, B2, B12 · Size: 1 L.",
+        imageUrl = "https://images.openfoodfacts.org/images/products/739/437/661/6013/front_en.281.400.jpg",
+        manufacturer = "Oatly AB",
+        countryOfOrigin = "Sweden",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
+        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
+        submittedBy = "openfoodfacts",
+      ) to ProductApiMetadata(
+        quantity = "1 L",
+        nutriscoreGrade = "B",
+        ecoscoreGrade = "A",
+        stores = listOf("Whole Foods", "Target", "Tesco", "Woolworths"),
+        packaging = "Tetra Pak",
+      ),
+      CatalogProduct(
+        id = "3608580065424",
+        barcode = "3608580065424",
+        name = "Bonne Maman Strawberry Preserve",
+        brand = "Bonne Maman",
+        category = "Breakfast Spreads",
+        description = "Traditional French strawberry jam crafted with simple fruit ingredients · Size: 370 g.",
+        imageUrl = "https://images.openfoodfacts.org/images/products/360/858/006/5424/front_fr.148.400.jpg",
+        manufacturer = "Andros",
+        countryOfOrigin = "France",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
+        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
+        submittedBy = "openfoodfacts",
+      ) to ProductApiMetadata(
+        quantity = "370 g",
+        nutriscoreGrade = "D",
+        ecoscoreGrade = "C",
+        stores = listOf("Target", "Whole Foods", "Carrefour", "Coles"),
+        packaging = "Glass jar",
+      ),
+      CatalogProduct(
         id = "0041220576135",
         barcode = "0041220576135",
         name = "Organic Rolled Oats",
         brand = "Nature's Pantry",
-        category = "Organic Oats & Breakfast",
-        description = "100% Whole Grain Organic Rolled Oats • Size: 907 g",
+        category = "Breakfast & Organic",
+        description = "100% Whole Grain Organic Rolled Oats · Size: 907 g.",
         imageUrl = "",
         manufacturer = "Nature's Pantry Foods",
         countryOfOrigin = "United States",
-        dataProvider = "Open Food Facts (Cached)",
-        attributionText = "Offline fallback © Open Food Facts contributors (ODbL)",
+        dataProvider = "Open Food Facts",
+        attributionText = "Data © Open Food Facts contributors (ODbL)",
         verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
         submittedBy = "openfoodfacts",
       ) to ProductApiMetadata(
@@ -621,27 +790,6 @@ class ProductRepository(
         ecoscoreGrade = "A",
         stores = listOf("Whole Foods", "Target", "Walmart"),
         packaging = "Recyclable pouch",
-      ),
-      CatalogProduct(
-        id = "0049000050103",
-        barcode = "0049000050103",
-        name = "Natural Mineral Sparkling Water",
-        brand = "Alpine Springs",
-        category = "Sparkling Water & Beverages",
-        description = "Zero calories crisp carbonated mineral water • Size: 500 ml",
-        imageUrl = "",
-        manufacturer = "Alpine Springs Bottling",
-        countryOfOrigin = "France",
-        dataProvider = "Open Food Facts (Cached)",
-        attributionText = "Offline fallback © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "500 ml",
-        nutriscoreGrade = "A",
-        ecoscoreGrade = "B",
-        stores = listOf("Whole Foods", "Instacart", "Amazon Fresh"),
-        packaging = "PET bottle",
       ),
     )
   }

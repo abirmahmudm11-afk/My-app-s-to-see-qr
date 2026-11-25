@@ -71,8 +71,10 @@ interface OpenFoodFactsApi {
 
   @GET("api/v2/search")
   suspend fun searchProductsV2(
-    @Query("search_terms") searchTerms: String,
-    @Query("page_size") pageSize: Int = 20,
+    @Query("search_terms") searchTerms: String = "",
+    @Query("categories_tags_en") categoriesTagsEn: String? = null,
+    @Query("sort_by") sortBy: String = "unique_scans_n",
+    @Query("page_size") pageSize: Int = 24,
     @Query("fields") fields: String = "code,product_name,brands,categories,ingredients_text,generic_name,image_front_url,image_url,countries,manufacturing_places,quantity,nutriscore_grade,ecoscore_grade,stores,packaging",
   ): OpenFoodFactsSearchResponse
 
@@ -82,7 +84,7 @@ interface OpenFoodFactsApi {
     @Query("search_simple") searchSimple: Int = 1,
     @Query("action") action: String = "process",
     @Query("json") json: Int = 1,
-    @Query("page_size") pageSize: Int = 20,
+    @Query("page_size") pageSize: Int = 24,
     @Query("fields") fields: String = "code,product_name,brands,categories,ingredients_text,generic_name,image_front_url,image_url,countries,manufacturing_places,quantity,nutriscore_grade,ecoscore_grade,stores,packaging",
   ): OpenFoodFactsSearchResponse
 }
@@ -93,5 +95,11 @@ interface OpenPricesApi {
     @Query("product_code") productCode: String,
     @Query("size") size: Int = 20,
     @Query("order_by") orderBy: String = "price",
+  ): OpenPricesResponse
+
+  @GET("api/v1/prices")
+  suspend fun getLatestPrices(
+    @Query("size") size: Int = 20,
+    @Query("order_by") orderBy: String = "-date",
   ): OpenPricesResponse
 }

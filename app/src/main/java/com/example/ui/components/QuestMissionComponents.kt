@@ -62,8 +62,8 @@ fun MissionProgressRing(
     label = "missionRingSweep",
   )
 
-  val trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-  val strokeColor = if (isCompleted) MaterialTheme.colorScheme.secondary else accentColor
+  val trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+  val strokeColor = if (isCompleted) MaterialTheme.colorScheme.primary else accentColor
 
   Box(
     modifier = modifier.size(ringSize),
@@ -100,7 +100,7 @@ fun MissionProgressRing(
 
     if (isCompleted) {
       Surface(
-        color = MaterialTheme.colorScheme.secondary,
+        color = MaterialTheme.colorScheme.primary,
         shape = CircleShape,
         modifier = Modifier.size(ringSize - strokeWidth * 2.8f),
       ) {
@@ -108,7 +108,7 @@ fun MissionProgressRing(
           Icon(
             Icons.Rounded.Check,
             contentDescription = "Completed",
-            tint = MaterialTheme.colorScheme.onSecondary,
+            tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.size(15.dp),
           )
         }
@@ -143,7 +143,7 @@ fun QuestMissionsSectionCard(
     modifier = modifier
       .fillMaxWidth()
       .testTag("missions_progress_card"),
-    shape = RoundedCornerShape(16.dp),
+    shape = RoundedCornerShape(18.dp),
     color = MaterialTheme.colorScheme.surface,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   ) {
@@ -171,7 +171,7 @@ fun QuestMissionsSectionCard(
           progress = totalProgress,
           isCompleted = completedCount == missions.size && missions.isNotEmpty(),
           reducedMotion = reducedMotion,
-          ringSize = 46.dp,
+          ringSize = 48.dp,
           strokeWidth = 4.5.dp,
         )
       }
@@ -219,68 +219,74 @@ private fun MissionTile(
 ) {
   val completed = mission.isCompleted
   val containerColor = if (completed) {
-    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
   } else {
-    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
   }
-  val accentColor = if (completed) {
-    MaterialTheme.colorScheme.secondary
+  val borderColor = if (completed) {
+    MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
   } else {
-    MaterialTheme.colorScheme.primary
+    MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
   }
 
-  Column(
+  Surface(
     modifier = modifier
-      .clip(RoundedCornerShape(12.dp))
-      .background(containerColor)
+      .clip(RoundedCornerShape(14.dp))
       .bounceClickable(onClick = onClick)
-      .padding(12.dp)
       .testTag("mission_tile_${mission.id}"),
-    verticalArrangement = Arrangement.spacedBy(8.dp),
+    shape = RoundedCornerShape(14.dp),
+    color = containerColor,
+    border = BorderStroke(1.dp, borderColor),
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
+    Column(
+      modifier = Modifier.padding(12.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      MissionProgressRing(
-        progress = mission.progressFraction,
-        isCompleted = completed,
-        reducedMotion = reducedMotion,
-        ringSize = 40.dp,
-        strokeWidth = 4.dp,
-        accentColor = accentColor,
-        centerLabel = "${mission.currentStep}/${mission.targetStep}",
-      )
-      Surface(
-        color = if (completed) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(6.dp),
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
       ) {
+        MissionProgressRing(
+          progress = mission.progressFraction,
+          isCompleted = completed,
+          reducedMotion = reducedMotion,
+          ringSize = 40.dp,
+          strokeWidth = 4.dp,
+          accentColor = MaterialTheme.colorScheme.primary,
+          centerLabel = "${mission.currentStep}/${mission.targetStep}",
+        )
+        Surface(
+          color = if (completed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+          shape = RoundedCornerShape(999.dp),
+          border = if (!completed) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null,
+        ) {
+          Text(
+            text = if (completed) "Done" else mission.rewardHint,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (completed) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+      }
+      Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-          text = if (completed) "Done" else mission.rewardHint,
-          style = MaterialTheme.typography.labelSmall,
-          color = if (completed) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+          text = mission.title,
+          style = MaterialTheme.typography.titleSmall,
+          color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
+        Text(
+          text = mission.subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
       }
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-      Text(
-        text = mission.title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-      Text(
-        text = mission.subtitle,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-      )
     }
   }
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -82,12 +83,17 @@ import com.example.ui.components.AnimatedOutlinedButton
 import com.example.ui.components.AnimatedTextButton
 import com.example.ui.components.SlidingSegmentedPillBar
 import com.example.ui.components.VerificationLabel
+import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatDetailedTimestamp
 import com.example.ui.components.formatTimestamp
 import com.example.ui.components.sharedProductBounds
+import com.example.ui.theme.CobaltAccent
+import com.example.ui.theme.HeroMintVaultBrush
 import com.example.ui.theme.LedgerDeckBrush
 import com.example.ui.theme.LedgerJadeDark
+import com.example.ui.theme.MintGlowBorderBrush
+import com.example.ui.theme.MintOnDarkText
 import com.example.ui.theme.SignalIndigo
 import com.example.ui.theme.SignalIndigoDark
 import com.example.ui.theme.TabularDataStyle
@@ -119,7 +125,7 @@ fun ProfileScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
@@ -136,33 +142,34 @@ fun ProfileScreen(
       // Account Identity Deck
       item {
         Surface(
-          shape = RoundedCornerShape(16.dp),
+          shape = RoundedCornerShape(22.dp),
           color = Color.Transparent,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          border = BorderStroke(1.2.dp, MintGlowBorderBrush),
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .background(LedgerDeckBrush)
-              .padding(18.dp),
+              .background(HeroMintVaultBrush)
+              .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
           ) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-              Box(
-                modifier = Modifier
-                  .size(52.dp)
-                  .clip(CircleShape)
-                  .background(SignalIndigo),
-                contentAlignment = Alignment.Center,
+              Surface(
+                modifier = Modifier.size(54.dp),
+                shape = CircleShape,
+                color = SignalIndigoDark.copy(alpha = 0.2f),
+                border = BorderStroke(1.5.dp, SignalIndigoDark),
               ) {
-                Text(
-                  text = initials,
-                  style = MaterialTheme.typography.titleLarge,
-                  color = Color.White,
-                )
+                Box(contentAlignment = Alignment.Center) {
+                  Text(
+                    text = initials,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = SignalIndigoDark,
+                  )
+                }
               }
               Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
@@ -182,8 +189,8 @@ fun ProfileScreen(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-              ProfileStatCell("${uiState.wallet.availablePoints} PTS", "Balance", LedgerJadeDark, Modifier.weight(1f))
-              ProfileStatCell("${uiState.recentScans.size}", "Scans", SignalIndigoDark, Modifier.weight(1f))
+              ProfileStatCell("${uiState.wallet.availablePoints} PTS", "Balance", SignalIndigoDark, Modifier.weight(1f))
+              ProfileStatCell("${uiState.recentScans.size}", "Scans", CobaltAccent, Modifier.weight(1f))
               ProfileStatCell(market.countryCode, market.currencyCode, Color.White, Modifier.weight(1f))
             }
 
@@ -192,22 +199,22 @@ fun ProfileScreen(
                 onClick = onSignIn,
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height(48.dp)
+                  .height(50.dp)
                   .testTag("profile_sign_in_button"),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = SignalIndigo, contentColor = Color.White),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SignalIndigoDark, contentColor = MintOnDarkText),
               ) {
-                Text("Continue with Google")
+                Text("Continue with Google", fontWeight = FontWeight.Bold)
               }
             } else {
               AnimatedOutlinedButton(
                 onClick = onSignOut,
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height(48.dp)
+                  .height(50.dp)
                   .testTag("profile_sign_out_button"),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.30f)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
                 colors = ButtonDefaults.outlinedButtonColors(
                   containerColor = Color.White.copy(alpha = 0.08f),
                   contentColor = Color.White,
@@ -245,9 +252,9 @@ fun ProfileScreen(
       // Grouped Settings: Activity & Region
       item {
         Surface(
-          shape = RoundedCornerShape(14.dp),
+          shape = RoundedCornerShape(18.dp),
           color = MaterialTheme.colorScheme.surface,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
         ) {
           Column {
             Box(modifier = Modifier.clickable(onClick = onOpenScanHistory)) {
@@ -257,7 +264,7 @@ fun ProfileScreen(
                 subtitle = "${uiState.recentScans.size} Room & cloud barcode records",
               )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
             Box(modifier = Modifier.clickable(onClick = onOpenNotifications)) {
               SettingsRowItem(
                 icon = Icons.Rounded.Notifications,
@@ -265,7 +272,7 @@ fun ProfileScreen(
                 subtitle = "${uiState.notifications.count { !it.read }} unread alerts",
               )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
             Box(modifier = Modifier.clickable(onClick = onOpenCountryLanguage)) {
               SettingsRowItem(
                 icon = Icons.Rounded.Language,
@@ -280,9 +287,9 @@ fun ProfileScreen(
       // Grouped Settings: Display & Motion
       item {
         Surface(
-          shape = RoundedCornerShape(14.dp),
+          shape = RoundedCornerShape(18.dp),
           color = MaterialTheme.colorScheme.surface,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
         ) {
           Column {
             Row(
@@ -488,12 +495,14 @@ fun ScanHistoryScreen(
     }
   }
 
-  Box(
+  BoxWithConstraints(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
+    val isWide = maxWidth >= 680.dp
+
     LazyColumn(
       modifier = Modifier
         .widthIn(max = 860.dp)
@@ -557,9 +566,9 @@ fun ScanHistoryScreen(
       // Clean Tabular History Counter Strip
       item {
         Surface(
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(14.dp),
           color = MaterialTheme.colorScheme.surface,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
         ) {
           Row(
             modifier = Modifier
@@ -646,178 +655,39 @@ fun ScanHistoryScreen(
             }
           }
         }
-      } else {
-        items(filteredScans, key = { "${it.id}_${it.barcodeValue}_${it.localTimestampMs}" }) { scan ->
-          val isQr = scan.barcodeFormat.contains("QR", ignoreCase = true)
-          Surface(
+      } else if (isWide) {
+        items(filteredScans.chunked(2), key = { row -> row.joinToString("_") { "${it.id}_${it.barcodeValue}_${it.localTimestampMs}" } }) { rowItems ->
+          Row(
             modifier = Modifier
               .animateItem()
-              .fillMaxWidth()
-              .sharedProductBounds("product_card_${scan.barcodeValue}")
-              .clip(RoundedCornerShape(14.dp))
-              .bounceClickable { onOpenScanItem(scan) }
-              .testTag("history_item_${scan.barcodeValue}"),
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+              .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            Column(
-              modifier = Modifier.padding(14.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-              ) {
-                if (scan.imageUrl.isNotBlank()) {
-                  AsyncImage(
-                    model = scan.imageUrl,
-                    contentDescription = scan.productName,
-                    modifier = Modifier
-                      .size(52.dp)
-                      .clip(RoundedCornerShape(10.dp))
-                      .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentScale = ContentScale.Crop,
-                  )
-                } else {
-                  Box(
-                    modifier = Modifier
-                      .size(52.dp)
-                      .clip(RoundedCornerShape(10.dp))
-                      .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                  ) {
-                    Icon(
-                      Icons.Rounded.QrCode2,
-                      contentDescription = null,
-                      tint = MaterialTheme.colorScheme.primary,
-                      modifier = Modifier.size(24.dp),
-                    )
-                  }
-                }
-
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                  Text(
-                    text = scan.productName.ifBlank { scan.barcodeValue },
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                  ) {
-                    Surface(
-                      color = if (isQr) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                      shape = RoundedCornerShape(4.dp),
-                    ) {
-                      Text(
-                        text = scan.barcodeFormat.ifBlank { "GTIN" },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isQr) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                      )
-                    }
-                    Text(
-                      text = listOfNotNull(
-                        scan.brand.takeIf { it.isNotBlank() },
-                        scan.barcodeValue,
-                      ).joinToString(" · "),
-                      style = TabularDataStyle,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                    )
-                  }
-                  Text(
-                    text = "Scanned ${formatDetailedTimestamp(scan.scannedAt, scan.localTimestampMs)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-
-                scan.localHistoryId?.let { localId ->
-                  AnimatedIconButton(
-                    onClick = { onDeleteEntry(localId) },
-                    modifier = Modifier.testTag("delete_history_$localId"),
-                  ) {
-                    Icon(
-                      Icons.Rounded.Delete,
-                      contentDescription = "Delete scan entry",
-                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.size(20.dp),
-                    )
-                  }
-                }
-              }
-
-              val metaTags = listOfNotNull(
-                scan.category.takeIf { it.isNotBlank() },
-                scan.quantity.takeIf { it.isNotBlank() }?.let { "Size: $it" },
-                scan.nutriscoreGrade.takeIf { it.isNotBlank() }?.let { "Nutri-Score: $it" },
-                scan.sourceProvider.takeIf { it.isNotBlank() && it != "None" },
+            rowItems.forEach { scan ->
+              ScanHistoryItemCard(
+                scan = scan,
+                onOpenScanItem = onOpenScanItem,
+                onDeleteEntry = onDeleteEntry,
+                onRescan = onRescan,
+                modifier = Modifier.weight(1f),
               )
-              if (metaTags.isNotEmpty()) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                  metaTags.forEach { tag ->
-                    Surface(
-                      color = MaterialTheme.colorScheme.surfaceVariant,
-                      shape = RoundedCornerShape(6.dp),
-                    ) {
-                      Text(
-                        text = tag,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                      )
-                    }
-                  }
-                }
-              }
-
-              if (scan.description.isNotBlank()) {
-                Text(
-                  text = scan.description,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  maxLines = 2,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                VerificationLabel(statusRaw = scan.verificationStatus)
-                AnimatedOutlinedButton(
-                  onClick = {
-                    onRescan(
-                      ScanContext(
-                        barcodeValue = scan.barcodeValue,
-                        barcodeFormat = scan.barcodeFormat,
-                        productName = scan.productName,
-                        brand = scan.brand,
-                      ),
-                    )
-                  },
-                  shape = RoundedCornerShape(8.dp),
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                  Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                  Spacer(Modifier.width(4.dp))
-                  Text("Re-scan")
-                }
-              }
+            }
+            if (rowItems.size == 1) {
+              Spacer(Modifier.weight(1f))
             }
           }
+        }
+      } else {
+        items(filteredScans, key = { "${it.id}_${it.barcodeValue}_${it.localTimestampMs}" }) { scan ->
+          ScanHistoryItemCard(
+            scan = scan,
+            onOpenScanItem = onOpenScanItem,
+            onDeleteEntry = onDeleteEntry,
+            onRescan = onRescan,
+            modifier = Modifier
+              .animateItem()
+              .fillMaxWidth(),
+          )
         }
       }
     }
@@ -845,6 +715,184 @@ fun ScanHistoryScreen(
         AnimatedTextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
       },
     )
+  }
+}
+
+@Composable
+private fun ScanHistoryItemCard(
+  scan: ScanRecord,
+  onOpenScanItem: (ScanRecord) -> Unit,
+  onDeleteEntry: (Long) -> Unit,
+  onRescan: (ScanContext) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val isQr = scan.barcodeFormat.contains("QR", ignoreCase = true)
+  Surface(
+    modifier = modifier
+      .sharedProductBounds("product_card_${scan.barcodeValue}")
+      .clip(RoundedCornerShape(16.dp))
+      .bounceClickable { onOpenScanItem(scan) }
+      .testTag("history_item_${scan.barcodeValue}"),
+    shape = RoundedCornerShape(16.dp),
+    color = MaterialTheme.colorScheme.surface,
+    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        if (scan.imageUrl.isNotBlank()) {
+          AsyncImage(
+            model = scan.imageUrl,
+            contentDescription = scan.productName,
+            modifier = Modifier
+              .size(52.dp)
+              .clip(RoundedCornerShape(10.dp))
+              .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentScale = ContentScale.Crop,
+          )
+        } else {
+          Box(
+            modifier = Modifier
+              .size(52.dp)
+              .clip(RoundedCornerShape(10.dp))
+              .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              Icons.Rounded.QrCode2,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(24.dp),
+            )
+          }
+        }
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(
+            text = scan.productName.ifBlank { scan.barcodeValue },
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Surface(
+              color = if (isQr) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(4.dp),
+            ) {
+              Text(
+                text = scan.barcodeFormat.ifBlank { "GTIN" },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isQr) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+              )
+            }
+            Text(
+              text = listOfNotNull(
+                scan.brand.takeIf { it.isNotBlank() },
+                scan.barcodeValue,
+              ).joinToString(" · "),
+              style = TabularDataStyle,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          Text(
+            text = "Scanned ${formatDetailedTimestamp(scan.scannedAt, scan.localTimestampMs)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+
+        scan.localHistoryId?.let { localId ->
+          AnimatedIconButton(
+            onClick = { onDeleteEntry(localId) },
+            modifier = Modifier.testTag("delete_history_$localId"),
+          ) {
+            Icon(
+              Icons.Rounded.Delete,
+              contentDescription = "Delete scan entry",
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.size(20.dp),
+            )
+          }
+        }
+      }
+
+      val metaTags = listOfNotNull(
+        scan.category.takeIf { it.isNotBlank() },
+        scan.quantity.takeIf { it.isNotBlank() }?.let { "Size: $it" },
+        scan.nutriscoreGrade.takeIf { it.isNotBlank() }?.let { "Nutri-Score: $it" },
+        scan.sourceProvider.takeIf { it.isNotBlank() && it != "None" },
+      )
+      if (metaTags.isNotEmpty()) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          metaTags.forEach { tag ->
+            Surface(
+              color = MaterialTheme.colorScheme.surfaceVariant,
+              shape = RoundedCornerShape(6.dp),
+            ) {
+              Text(
+                text = tag,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+              )
+            }
+          }
+        }
+      }
+
+      if (scan.description.isNotBlank()) {
+        Text(
+          text = scan.description,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        VerificationLabel(statusRaw = scan.verificationStatus)
+        AnimatedOutlinedButton(
+          onClick = {
+            onRescan(
+              ScanContext(
+                barcodeValue = scan.barcodeValue,
+                barcodeFormat = scan.barcodeFormat,
+                productName = scan.productName,
+                brand = scan.brand,
+              ),
+            )
+          },
+          shape = RoundedCornerShape(8.dp),
+          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+          Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+          Spacer(Modifier.width(4.dp))
+          Text("Re-scan")
+        }
+      }
+    }
   }
 }
 
@@ -884,7 +932,7 @@ fun NotificationsScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
@@ -934,7 +982,7 @@ fun CountryLanguageScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
@@ -994,7 +1042,7 @@ fun PrivacySettingsScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     Column(
@@ -1075,7 +1123,7 @@ fun TermsRulesScreen(onBack: () -> Unit) {
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
@@ -1128,7 +1176,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(

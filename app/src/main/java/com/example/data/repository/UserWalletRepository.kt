@@ -34,6 +34,7 @@ class UserWalletRepository(
     displayName: String,
     countryCode: String,
     languageCode: String,
+    darkThemeEnabled: Boolean = true,
   ) {
     val uid = auth.currentUser?.uid ?: return
     if (uid != userId) return
@@ -51,7 +52,7 @@ class UserWalletRepository(
             "currencyCode" to market.currencyCode,
             "accountStatus" to "ACTIVE",
             "marketingConsent" to false,
-            "darkThemeEnabled" to false,
+            "darkThemeEnabled" to darkThemeEnabled,
             "reducedMotionEnabled" to false,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp(),

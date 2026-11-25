@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.LocalOffer
@@ -93,6 +96,7 @@ import com.example.ui.components.GuestModeBanner
 import com.example.ui.components.ProductSummaryCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.VerificationLabel
+import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
 import com.example.ui.components.sharedProductBounds
 import com.example.ui.theme.TabularDataStyle
@@ -100,22 +104,45 @@ import com.example.ui.viewmodel.MainUiState
 import com.example.ui.viewmodel.ProductDetailViewModel
 import kotlinx.coroutines.launch
 
+private data class CatalogCategorySpec(
+  val label: String,
+  val apiTag: String?,
+  val fallbackKeyword: String,
+)
+
 @Composable
 fun DiscoverScreen(
   uiState: MainUiState,
   onSearch: (String) -> Unit,
+  onSelectCategory: (String?, String) -> Unit = { _, _ -> },
+  onRefreshCatalog: () -> Unit = {},
   onOpenProduct: (String) -> Unit,
   onOpenScan: () -> Unit,
 ) {
   var query by remember { mutableStateOf("") }
-  val displayList = if (query.trim().isNotEmpty()) uiState.searchResults else uiState.cachedCatalog
+  var selectedCategoryLabel by remember { mutableStateOf("All") }
+  val categories = remember {
+    listOf(
+      CatalogCategorySpec("All", null, ""),
+      CatalogCategorySpec("Beverages", "en:beverages", "Beverages"),
+      CatalogCategorySpec("Snacks", "en:snacks", "Snacks"),
+      CatalogCategorySpec("Breakfast", "en:breakfasts", "Breakfast"),
+      CatalogCategorySpec("Dairy & Plant", "en:dairies", "Oatly"),
+      CatalogCategorySpec("Pantry", "en:pastas", "Pasta"),
+    )
+  }
 
-  Box(
+  val isFiltering = query.trim().isNotEmpty() || selectedCategoryLabel != "All"
+  val displayList = if (isFiltering) uiState.searchResults else uiState.cachedCatalog
+
+  BoxWithConstraints(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
+    val isWide = maxWidth >= 680.dp
+
     LazyColumn(
       modifier = Modifier
         .widthIn(max = 860.dp)
@@ -127,28 +154,40 @@ fun DiscoverScreen(
         Row(
           modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(14.dp),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
           Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-              text = "Discover Products",
+              text = "Discover Catalog",
               style = MaterialTheme.typography.displayMedium,
               color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-              text = "Search Open Food Facts, verified merchants, or your offline cache.",
+              text = "Live Open Food Facts database, prices & local cache.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
-          Image(
-            painter = painterResource(id = R.drawable.img_discover_basket),
-            contentDescription = "Product catalog",
-            modifier = Modifier
-              .size(52.dp)
-              .clip(RoundedCornerShape(12.dp)),
-            contentScale = ContentScale.Crop,
-          )
+          Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = CircleShape,
+            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+          ) {
+            AnimatedIconButton(
+              onClick = {
+                query = ""
+                selectedCategoryLabel = "All"
+                onSelectCategory(null, "")
+                onRefreshCatalog()
+              },
+            ) {
+              Icon(
+                Icons.Rounded.Refresh,
+                contentDescription = "Refresh live catalog",
+                tint = MaterialTheme.colorScheme.primary,
+              )
+            }
+          }
         }
       }
 
@@ -160,7 +199,12 @@ fun DiscoverScreen(
         ) {
           OutlinedTextField(
             value = query,
-            onValueChange = { query = it },
+            onValueChange = { next ->
+              query = next
+              if (next.isEmpty() && selectedCategoryLabel == "All") {
+                onSearch("")
+              }
+            },
             placeholder = { Text("Name, brand, or GTIN barcode") },
             leadingIcon = {
               Icon(
@@ -169,15 +213,36 @@ fun DiscoverScreen(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
               )
             },
+            trailingIcon = {
+              if (query.isNotEmpty()) {
+                AnimatedIconButton(
+                  onClick = {
+                    query = ""
+                    selectedCategoryLabel = "All"
+                    onSearch("")
+                  },
+                ) {
+                  Icon(Icons.Rounded.Close, contentDescription = "Clear search")
+                }
+              }
+            },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch(query) }),
-            shape = RoundedCornerShape(10.dp),
+            keyboardActions = KeyboardActions(
+              onSearch = {
+                selectedCategoryLabel = "All"
+                onSearch(query)
+              },
+            ),
+            shape = RoundedCornerShape(14.dp),
             modifier = Modifier.weight(1f),
           )
           AnimatedButton(
-            onClick = { onSearch(query) },
-            shape = RoundedCornerShape(10.dp),
+            onClick = {
+              selectedCategoryLabel = "All"
+              onSearch(query)
+            },
+            shape = RoundedCornerShape(14.dp),
             modifier = Modifier.height(54.dp),
           ) {
             Text("Search")
@@ -186,30 +251,36 @@ fun DiscoverScreen(
       }
 
       item {
-        val quickTags = listOf("Organic Oats", "Sparkling Water", "3017620422003", "5449000000996")
         Row(
           modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          quickTags.forEach { quick ->
+          categories.forEach { cat ->
+            val selected = selectedCategoryLabel == cat.label && query.isBlank()
             Surface(
               modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(999.dp))
                 .bounceClickable {
-                  query = quick
-                  onSearch(quick)
+                  query = ""
+                  selectedCategoryLabel = cat.label
+                  onSelectCategory(cat.apiTag, cat.fallbackKeyword)
                 },
-              color = MaterialTheme.colorScheme.surface,
-              shape = RoundedCornerShape(8.dp),
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+              color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+              shape = RoundedCornerShape(999.dp),
+              border = BorderStroke(
+                width = 0.75.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.65f),
+              ),
             ) {
               Text(
-                text = quick,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                text = cat.label,
+                style = MaterialTheme.typography.labelLarge.copy(
+                  fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                ),
+                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
               )
             }
           }
@@ -301,15 +372,42 @@ fun DiscoverScreen(
       } else {
         item {
           SectionHeader(
-            title = if (query.isBlank()) "Cached Products (${displayList.size})" else "Results (${displayList.size})",
+            title = if (!isFiltering) {
+              "Live & Cached Products (${displayList.size})"
+            } else if (query.isNotBlank()) {
+              "Results (${displayList.size})"
+            } else {
+              "$selectedCategoryLabel (${displayList.size})"
+            },
           )
         }
-        items(displayList, key = { it.barcode }) { product ->
-          ProductSummaryCard(
-            product = product,
-            onClick = { onOpenProduct(product.barcode) },
-            modifier = Modifier.animateItem(),
-          )
+        if (isWide) {
+          val rows = displayList.chunked(2)
+          items(rows) { pair ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              pair.forEach { product ->
+                ProductSummaryCard(
+                  product = product,
+                  onClick = { onOpenProduct(product.barcode) },
+                  modifier = Modifier.weight(1f),
+                )
+              }
+              if (pair.size == 1) {
+                Spacer(Modifier.weight(1f))
+              }
+            }
+          }
+        } else {
+          items(displayList, key = { it.barcode }) { product ->
+            ProductSummaryCard(
+              product = product,
+              onClick = { onOpenProduct(product.barcode) },
+              modifier = Modifier.animateItem(),
+            )
+          }
         }
       }
     }
@@ -395,7 +493,7 @@ fun ProductDetailScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
@@ -998,12 +1096,26 @@ fun OfferDetailScreen(
   }
 
   val offer = detailState.offers.firstOrNull { it.id == offerId }
+  val comparedOffer = detailState.comparedOffers.firstOrNull {
+    it.id == offerId || it.firestoreOfferId == offerId
+  }
   val product = detailState.product
+
+  val resolvedStoreName = offer?.storeName ?: comparedOffer?.storeName
+  val resolvedPrice = offer?.price ?: comparedOffer?.price
+  val resolvedCurrency = offer?.currencyCode ?: comparedOffer?.currencyCode ?: MarketConfig.findByCountry(countryCode).currencyCode
+  val resolvedVerified = offer?.verified ?: comparedOffer?.isVerifiedMerchant ?: false
+  val resolvedOfferUrl = offer?.offerUrl ?: comparedOffer?.offerUrl.orEmpty()
+  val resolvedMetaLabel = when {
+    offer != null -> if (offer.verified) "Verified Merchant Price" else "Community Price Report (Unverified)"
+    comparedOffer != null -> "${comparedOffer.sourceLabel}${if (comparedOffer.locationLabel.isNotBlank()) " · ${comparedOffer.locationLabel}" else ""}"
+    else -> ""
+  }
 
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     Column(
@@ -1026,8 +1138,8 @@ fun OfferDetailScreen(
         }
         AnimatedIconButton(
           onClick = {
-            val text = if (offer != null) {
-              "${product?.name ?: barcode} at ${offer.storeName}: ${MarketConfig.formatMoney(offer.price, offer.currencyCode)} (${if (offer.verified) "Verified" else "Unverified"})"
+            val text = if (resolvedStoreName != null && resolvedPrice != null) {
+              "${product?.name ?: barcode} at $resolvedStoreName: ${MarketConfig.formatMoney(resolvedPrice, resolvedCurrency)}"
             } else {
               "Check barcode $barcode on SCAN2MONEY"
             }
@@ -1042,26 +1154,61 @@ fun OfferDetailScreen(
         }
       }
 
-      if (offer == null) {
-        Text("Loading offer details...", style = MaterialTheme.typography.bodyMedium)
+      if (resolvedStoreName == null || resolvedPrice == null) {
+        if (detailState.isLoading || detailState.isComparingOffers) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(vertical = 24.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(10.dp))
+            Text("Loading offer details...", style = MaterialTheme.typography.bodyMedium)
+          }
+        } else {
+          Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+          ) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Text("Offer No Longer Listed", style = MaterialTheme.typography.titleLarge)
+              Text(
+                text = "This store offer could not be loaded for barcode $barcode.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              AnimatedOutlinedButton(onClick = onBack, shape = RoundedCornerShape(12.dp)) {
+                Text("Back to Product")
+              }
+            }
+          }
+        }
       } else {
         Surface(
-          shape = RoundedCornerShape(16.dp),
+          shape = RoundedCornerShape(18.dp),
           color = MaterialTheme.colorScheme.surface,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(18.dp),
+              .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               Icon(Icons.Rounded.LocalOffer, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-              Text(offer.storeName, style = MaterialTheme.typography.headlineMedium)
+              Text(resolvedStoreName, style = MaterialTheme.typography.headlineMedium)
             }
             Text(
-              text = MarketConfig.formatMoney(offer.price, offer.currencyCode),
+              text = MarketConfig.formatMoney(resolvedPrice, resolvedCurrency),
               style = MaterialTheme.typography.displayMedium,
               color = MaterialTheme.colorScheme.secondary,
             )
@@ -1073,23 +1220,23 @@ fun OfferDetailScreen(
               Icon(
                 Icons.Rounded.CheckCircle,
                 contentDescription = null,
-                tint = if (offer.verified) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary,
+                tint = if (resolvedVerified) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.size(16.dp),
               )
               Text(
-                text = if (offer.verified) "Verified Merchant Price" else "Community Price Report (Unverified)",
+                text = resolvedMetaLabel,
                 style = MaterialTheme.typography.bodySmall,
               )
             }
-            if (offer.offerUrl.startsWith("http", ignoreCase = true)) {
+            if (resolvedOfferUrl.startsWith("http", ignoreCase = true)) {
               AnimatedButton(
                 onClick = {
                   runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(offer.offerUrl)))
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(resolvedOfferUrl)))
                   }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(12.dp),
               ) {
                 Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))

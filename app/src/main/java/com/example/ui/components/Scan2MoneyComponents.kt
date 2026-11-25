@@ -69,9 +69,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -82,14 +87,83 @@ import coil.compose.AsyncImage
 import com.example.data.model.CatalogProduct
 import com.example.data.model.ReceiptReviewStatus
 import com.example.data.model.VerificationStatus
+import com.example.ui.theme.CobaltAccent
 import com.example.ui.theme.LocalAnimatedVisibilityScope
 import com.example.ui.theme.LocalReducedMotion
 import com.example.ui.theme.LocalSharedTransitionScope
+import com.example.ui.theme.SignalIndigoDark
 import com.example.ui.theme.TabularDataStyle
 import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+fun Modifier.atmosphericBackdrop(): Modifier = composed {
+  val bgColor = MaterialTheme.colorScheme.background
+  val primaryGlow = MaterialTheme.colorScheme.primary
+  val isDark = bgColor.luminance() < 0.2f
+  val mintAlpha = if (isDark) 0.14f else 0.10f
+  val cobaltAlpha = if (isDark) 0.14f else 0.08f
+
+  background(bgColor).drawBehind {
+    drawCircle(
+      brush = Brush.radialGradient(
+        colors = listOf(primaryGlow.copy(alpha = mintAlpha), Color.Transparent),
+        center = Offset(size.width * 0.15f, size.height * 0.08f),
+        radius = size.maxDimension * 0.55f,
+      ),
+      radius = size.maxDimension * 0.55f,
+      center = Offset(size.width * 0.15f, size.height * 0.08f),
+    )
+    drawCircle(
+      brush = Brush.radialGradient(
+        colors = listOf(CobaltAccent.copy(alpha = cobaltAlpha), Color.Transparent),
+        center = Offset(size.width * 0.92f, size.height * 0.28f),
+        radius = size.maxDimension * 0.5f,
+      ),
+      radius = size.maxDimension * 0.5f,
+      center = Offset(size.width * 0.92f, size.height * 0.28f),
+    )
+  }
+}
+
+@Composable
+fun GlowingPillBadge(
+  text: String,
+  modifier: Modifier = Modifier,
+  icon: ImageVector? = null,
+  accentColor: Color = MaterialTheme.colorScheme.primary,
+  containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+) {
+  Surface(
+    modifier = modifier,
+    color = containerColor,
+    shape = RoundedCornerShape(999.dp),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+      if (icon != null) {
+        Icon(
+          imageVector = icon,
+          contentDescription = null,
+          tint = accentColor,
+          modifier = Modifier.size(13.dp),
+        )
+      }
+      Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = accentColor,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+  }
+}
 
 fun Modifier.sharedProductBounds(key: String): Modifier = composed {
   val reducedMotion = LocalReducedMotion.current
@@ -113,14 +187,10 @@ fun Modifier.sharedProductBounds(key: String): Modifier = composed {
   }
 }
 
-/**
- * Crisp tactile press detent (110ms ease-out, zero elastic overshoot).
- * Gives responsive confirmation without making everyday tasks feel sluggish or bouncy.
- */
 fun Modifier.pressBounce(
   interactionSource: MutableInteractionSource,
   enabled: Boolean = true,
-  pressedScale: Float = 0.975f,
+  pressedScale: Float = 0.97f,
 ): Modifier = composed {
   val reducedMotion = LocalReducedMotion.current
   val pressed by interactionSource.collectIsPressedAsState()
@@ -137,7 +207,7 @@ fun Modifier.pressBounce(
 
 fun Modifier.bounceClickable(
   enabled: Boolean = true,
-  pressedScale: Float = 0.975f,
+  pressedScale: Float = 0.97f,
   onClick: () -> Unit,
 ): Modifier = composed {
   val interactionSource = remember { MutableInteractionSource() }
@@ -150,9 +220,6 @@ fun Modifier.bounceClickable(
     )
 }
 
-/**
- * Immediate presentation for Operate-mode screens — no forced staggered load-in delays.
- */
 @Composable
 fun MotionStaggeredEntrance(
   @Suppress("UNUSED_PARAMETER") index: Int,
@@ -162,9 +229,6 @@ fun MotionStaggeredEntrance(
   Box(modifier = modifier) { content() }
 }
 
-/**
- * Sunken segmented control track with lifted pill thumb (Apple/Material hybrid).
- */
 @Composable
 fun SlidingSegmentedPillBar(
   options: List<String>,
@@ -173,7 +237,7 @@ fun SlidingSegmentedPillBar(
   modifier: Modifier = Modifier,
   containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
   pillColor: Color = MaterialTheme.colorScheme.surface,
-  activeTextColor: Color = MaterialTheme.colorScheme.onSurface,
+  activeTextColor: Color = MaterialTheme.colorScheme.primary,
   inactiveTextColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
   height: Dp = 44.dp,
 ) {
@@ -183,7 +247,7 @@ fun SlidingSegmentedPillBar(
   BoxWithConstraints(
     modifier = modifier
       .height(height)
-      .clip(RoundedCornerShape(10.dp))
+      .clip(RoundedCornerShape(12.dp))
       .background(containerColor)
       .padding(3.dp),
   ) {
@@ -203,9 +267,9 @@ fun SlidingSegmentedPillBar(
         .offset(x = pillOffset)
         .width(tabWidth)
         .fillMaxHeight(),
-      shape = RoundedCornerShape(8.dp),
+      shape = RoundedCornerShape(9.dp),
       color = pillColor,
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
     ) {}
 
     Row(modifier = Modifier.fillMaxSize()) {
@@ -215,7 +279,7 @@ fun SlidingSegmentedPillBar(
           modifier = Modifier
             .weight(1f)
             .fillMaxHeight()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(9.dp))
             .clickable { onSelect(idx) },
           contentAlignment = Alignment.Center,
         ) {
@@ -223,7 +287,7 @@ fun SlidingSegmentedPillBar(
             text = label,
             style = MaterialTheme.typography.labelLarge,
             color = if (selected) activeTextColor else inactiveTextColor,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -235,7 +299,7 @@ fun SlidingSegmentedPillBar(
 
 @Composable
 fun LivePulseDot(
-  color: Color = MaterialTheme.colorScheme.primary,
+  color: Color = SignalIndigoDark,
   size: Dp = 7.dp,
   modifier: Modifier = Modifier,
 ) {
@@ -244,7 +308,7 @@ fun LivePulseDot(
     remember { mutableFloatStateOf(0.5f) }
   } else {
     rememberInfiniteTransition(label = "liveDotPulse").animateFloat(
-      initialValue = 0.2f,
+      initialValue = 0.25f,
       targetValue = 1f,
       animationSpec = infiniteRepeatable(
         animation = tween(1200, easing = FastOutSlowInEasing),
@@ -260,9 +324,9 @@ fun LivePulseDot(
   ) {
     Box(
       modifier = Modifier
-        .size(size * 1.8f)
+        .size(size * 1.9f)
         .clip(CircleShape)
-        .background(color.copy(alpha = 0.24f * pulse)),
+        .background(color.copy(alpha = 0.30f * pulse)),
     )
     Box(
       modifier = Modifier
@@ -278,7 +342,7 @@ fun AnimatedButton(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
-  shape: Shape = RoundedCornerShape(10.dp),
+  shape: Shape = RoundedCornerShape(12.dp),
   colors: ButtonColors = ButtonDefaults.buttonColors(),
   border: BorderStroke? = null,
   contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
@@ -305,7 +369,7 @@ fun AnimatedOutlinedButton(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
-  shape: Shape = RoundedCornerShape(10.dp),
+  shape: Shape = RoundedCornerShape(12.dp),
   colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
   border: BorderStroke? = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
@@ -332,7 +396,7 @@ fun AnimatedTextButton(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
-  shape: Shape = RoundedCornerShape(8.dp),
+  shape: Shape = RoundedCornerShape(10.dp),
   colors: ButtonColors = ButtonDefaults.textButtonColors(),
   contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
   content: @Composable RowScope.() -> Unit,
@@ -381,13 +445,13 @@ fun VerificationLabel(
   val status = VerificationStatus.fromString(statusRaw)
   val (bg, fg, icon) = when (status) {
     VerificationStatus.VERIFIED_MERCHANT -> Triple(
-      MaterialTheme.colorScheme.secondaryContainer,
-      MaterialTheme.colorScheme.secondary,
+      MaterialTheme.colorScheme.primaryContainer,
+      MaterialTheme.colorScheme.primary,
       Icons.Rounded.CheckCircle,
     )
     VerificationStatus.LICENSED_PROVIDER -> Triple(
-      MaterialTheme.colorScheme.primaryContainer,
-      MaterialTheme.colorScheme.primary,
+      MaterialTheme.colorScheme.secondaryContainer,
+      MaterialTheme.colorScheme.secondary,
       Icons.Rounded.Shield,
     )
     VerificationStatus.OPEN_FOOD_FACTS -> Triple(
@@ -409,14 +473,15 @@ fun VerificationLabel(
   Surface(
     modifier = modifier,
     color = bg,
-    shape = RoundedCornerShape(6.dp),
+    shape = RoundedCornerShape(999.dp),
+    border = BorderStroke(1.dp, fg.copy(alpha = 0.22f)),
   ) {
     Row(
       modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-      Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(13.dp))
+      Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(12.dp))
       Text(
         text = status.label,
         style = MaterialTheme.typography.labelSmall,
@@ -436,8 +501,8 @@ fun ReceiptStatusBadge(
   val status = ReceiptReviewStatus.fromString(statusRaw)
   val (bg, fg, icon, text) = when (status) {
     ReceiptReviewStatus.APPROVED -> listOf(
-      MaterialTheme.colorScheme.secondaryContainer,
-      MaterialTheme.colorScheme.secondary,
+      MaterialTheme.colorScheme.primaryContainer,
+      MaterialTheme.colorScheme.primary,
       Icons.Rounded.CheckCircle,
       "Approved",
     )
@@ -458,15 +523,16 @@ fun ReceiptStatusBadge(
   Surface(
     modifier = modifier,
     color = bg as Color,
-    shape = RoundedCornerShape(6.dp),
+    shape = RoundedCornerShape(999.dp),
+    border = BorderStroke(1.dp, fgColor.copy(alpha = 0.25f)),
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+      modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       Icon(
-        icon as androidx.compose.ui.graphics.vector.ImageVector,
+        icon as ImageVector,
         contentDescription = null,
         tint = fgColor,
         modifier = Modifier.size(13.dp),
@@ -484,26 +550,26 @@ fun ReceiptStatusBadge(
 fun SandboxCashbackBanner(modifier: Modifier = Modifier) {
   Surface(
     modifier = modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(18.dp),
     color = MaterialTheme.colorScheme.surface,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(14.dp),
+        .padding(15.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(11.dp),
       ) {
         Icon(
           Icons.Rounded.VerifiedUser,
           contentDescription = null,
           tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.padding(8.dp).size(18.dp),
+          modifier = Modifier.padding(10.dp).size(20.dp),
         )
       }
       Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -529,36 +595,36 @@ fun GuestModeBanner(
 ) {
   Surface(
     modifier = modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(18.dp),
     color = MaterialTheme.colorScheme.surface,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)),
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 14.dp, vertical = 12.dp),
+        .padding(horizontal = 15.dp, vertical = 13.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(11.dp),
       ) {
         Icon(
           Icons.Rounded.PersonOutline,
           contentDescription = null,
           tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.padding(8.dp).size(18.dp),
+          modifier = Modifier.padding(10.dp).size(18.dp),
         )
       }
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-          text = "Guest Mode",
+          text = "Guest Mode Active",
           style = MaterialTheme.typography.titleSmall,
           color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-          text = "Scanning and local history stay on device. Sign in to sync receipts and claim rewards.",
+          text = "Scans save on device. Sign in to sync receipts and claim rewards.",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -566,7 +632,7 @@ fun GuestModeBanner(
       AnimatedButton(
         onClick = onSignInClick,
         modifier = Modifier.testTag("guest_banner_sign_in_button"),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(11.dp),
         colors = ButtonDefaults.buttonColors(
           containerColor = MaterialTheme.colorScheme.primary,
           contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -585,21 +651,33 @@ fun SectionHeader(
   actionLabel: String? = null,
   onAction: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
-  @Suppress("UNUSED_PARAMETER") accentColor: Color = Color.Unspecified,
+  accentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
   Row(
     modifier = modifier.fillMaxWidth(),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.SpaceBetween,
   ) {
-    Text(
-      text = title,
-      style = MaterialTheme.typography.titleLarge,
-      color = MaterialTheme.colorScheme.onBackground,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
+    Row(
       modifier = Modifier.weight(1f),
-    )
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .width(4.dp)
+          .height(18.dp)
+          .clip(RoundedCornerShape(999.dp))
+          .background(accentColor),
+      )
+      Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onBackground,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
     if (actionLabel != null && onAction != null) {
       AnimatedTextButton(onClick = onAction) {
         Text(
@@ -622,32 +700,32 @@ fun ProductSummaryCard(
     modifier = modifier
       .fillMaxWidth()
       .sharedProductBounds("product_card_${product.barcode}")
-      .clip(RoundedCornerShape(14.dp))
+      .clip(RoundedCornerShape(18.dp))
       .bounceClickable(onClick = onClick),
-    shape = RoundedCornerShape(14.dp),
+    shape = RoundedCornerShape(18.dp),
     color = MaterialTheme.colorScheme.surface,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
   ) {
     Row(
       modifier = Modifier.padding(14.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       if (product.imageUrl.isNotBlank()) {
         AsyncImage(
           model = product.imageUrl,
           contentDescription = product.name,
           modifier = Modifier
-            .size(56.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .size(62.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
           contentScale = ContentScale.Crop,
         )
       } else {
         Box(
           modifier = Modifier
-            .size(56.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .size(62.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.primaryContainer),
           contentAlignment = Alignment.Center,
         ) {
@@ -682,8 +760,8 @@ fun ProductSummaryCard(
             Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
           Text(
-            text = product.barcode,
-            style = TabularDataStyle,
+            text = product.category.ifBlank { product.barcode },
+            style = if (product.category.isNotBlank()) MaterialTheme.typography.bodySmall else TabularDataStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

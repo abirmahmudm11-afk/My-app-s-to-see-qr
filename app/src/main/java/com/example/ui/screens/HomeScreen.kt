@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -53,6 +54,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -61,6 +65,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.Campaign
 import com.example.data.model.ScanContext
@@ -69,19 +74,26 @@ import com.example.domain.MarketConfig
 import com.example.ui.components.AnimatedButton
 import com.example.ui.components.AnimatedIconButton
 import com.example.ui.components.AnimatedOutlinedButton
+import com.example.ui.components.GlowingPillBadge
 import com.example.ui.components.GuestModeBanner
+import com.example.ui.components.LivePulseDot
 import com.example.ui.components.ProductSummaryCard
 import com.example.ui.components.QuestMissionsSectionCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.SlidingSegmentedPillBar
 import com.example.ui.components.VerificationLabel
+import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatTimestamp
 import com.example.ui.components.sharedProductBounds
-import com.example.ui.theme.LedgerDeckBrush
+import com.example.ui.theme.CobaltAccent
+import com.example.ui.theme.HeroMintVaultBrush
 import com.example.ui.theme.LedgerJadeDark
+import com.example.ui.theme.MintGlowBorderBrush
+import com.example.ui.theme.MintOnDarkText
+import com.example.ui.theme.PrecisionAmberDark
 import com.example.ui.theme.ReticleAmber
-import com.example.ui.theme.SignalIndigo
+import com.example.ui.theme.SignalIndigoDark
 import com.example.ui.theme.TabularDataStyle
 import com.example.ui.theme.TabularFigureLargeStyle
 import com.example.ui.theme.ViewfinderMuted
@@ -119,7 +131,7 @@ fun HomeScreen(
   BoxWithConstraints(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
     contentAlignment = Alignment.TopCenter,
   ) {
     val isWide = maxWidth >= 720.dp
@@ -131,7 +143,7 @@ fun HomeScreen(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      // Crisp Operate Header (no eyebrow badge stack)
+      // Expressive Top Header
       item {
         Row(
           modifier = Modifier
@@ -140,18 +152,23 @@ fun HomeScreen(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              GlowingPillBadge(
+                text = "${market.countryCode} · ${market.currencyCode}",
+                icon = Icons.Rounded.Public,
+              )
+              LivePulseDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
+            }
             Text(
-              text = uiState.firebaseUser?.displayName?.let { "Welcome, $it" } ?: "SCAN2MONEY",
+              text = uiState.firebaseUser?.displayName?.let { "Hey, $it" } ?: "SCAN2MONEY",
               style = MaterialTheme.typography.displayMedium,
               color = MaterialTheme.colorScheme.onBackground,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text = "${market.countryName} · ${market.currencyCode} ledger",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
 
@@ -208,55 +225,73 @@ fun HomeScreen(
         }
       }
 
-      // Authoritative Balance Ledger Deck + Primary Actions
+      // Holographic Mint Vault Balance Card
       item {
         Surface(
-          shape = RoundedCornerShape(16.dp),
+          shape = RoundedCornerShape(24.dp),
           color = Color.Transparent,
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+          border = BorderStroke(0.9.dp, MintGlowBorderBrush),
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .background(LedgerDeckBrush)
-              .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+              .background(HeroMintVaultBrush)
+              .drawBehind {
+                drawCircle(
+                  brush = Brush.radialGradient(
+                    colors = listOf(SignalIndigoDark.copy(alpha = 0.24f), Color.Transparent),
+                    center = Offset(size.width * 0.9f, size.height * 0.1f),
+                    radius = size.width * 0.52f,
+                  ),
+                  radius = size.width * 0.52f,
+                  center = Offset(size.width * 0.9f, size.height * 0.1f),
+                )
+              }
+              .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
           ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.Top,
             ) {
-              Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                  text = "Available balance",
-                  style = MaterialTheme.typography.bodySmall,
+                  text = "AVAILABLE BALANCE",
+                  style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                   color = ViewfinderMuted,
                 )
                 Row(
                   verticalAlignment = Alignment.Bottom,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                   Text(
                     text = "$animatedAvailablePoints",
                     style = TabularFigureLargeStyle,
                     color = Color.White,
                   )
-                  Text(
-                    text = "PTS",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = LedgerJadeDark,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                  )
+                  Surface(
+                    color = SignalIndigoDark.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(999.dp),
+                    modifier = Modifier.padding(bottom = 7.dp),
+                  ) {
+                    Text(
+                      text = "PTS",
+                      style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                      color = SignalIndigoDark,
+                      modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                    )
+                  }
                 }
               }
 
               Surface(
                 color = Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
               ) {
                 Column(
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
                   horizontalAlignment = Alignment.End,
                 ) {
                   Text(
@@ -281,27 +316,27 @@ fun HomeScreen(
                 onClick = onOpenScan,
                 modifier = Modifier
                   .weight(1f)
-                  .height(48.dp)
+                  .height(50.dp)
                   .testTag("home_scan_item_button"),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                  containerColor = SignalIndigo,
-                  contentColor = Color.White,
+                  containerColor = SignalIndigoDark,
+                  contentColor = MintOnDarkText,
                 ),
               ) {
                 Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Scan Item", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.width(7.dp))
+                Text("Scan Item", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
               }
 
               AnimatedOutlinedButton(
                 onClick = { onOpenReceiptSubmit(null) },
                 modifier = Modifier
                   .weight(1f)
-                  .height(48.dp)
+                  .height(50.dp)
                   .testTag("home_log_receipt_button"),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.30f)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
                 colors = ButtonDefaults.outlinedButtonColors(
                   containerColor = Color.White.copy(alpha = 0.08f),
                   contentColor = Color.White,
@@ -313,7 +348,7 @@ fun HomeScreen(
                   tint = Color.White,
                   modifier = Modifier.size(18.dp),
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(7.dp))
                 Text("Log Receipt", color = Color.White, style = MaterialTheme.typography.labelLarge)
               }
             }
@@ -321,7 +356,7 @@ fun HomeScreen(
         }
       }
 
-      // Unified Quick Access Strip (Single coherent surface system, zero candy rainbow)
+      // Tinted Quick-Action Bento Strip
       item {
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -330,6 +365,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.Rounded.Search,
             label = "Discover",
+            accent = SignalIndigoDark,
             onClick = onOpenDiscover,
             modifier = Modifier
               .weight(1f)
@@ -338,6 +374,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.Rounded.AccountBalanceWallet,
             label = "Wallet",
+            accent = CobaltAccent,
             onClick = onOpenRewards,
             modifier = Modifier
               .weight(1f)
@@ -346,6 +383,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.AutoMirrored.Rounded.ReceiptLong,
             label = "Receipts",
+            accent = PrecisionAmberDark,
             onClick = { onOpenReceiptSubmit(null) },
             modifier = Modifier
               .weight(1f)
@@ -354,6 +392,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.Rounded.History,
             label = "History",
+            accent = LedgerJadeDark,
             onClick = onOpenScanHistory,
             modifier = Modifier
               .weight(1f)
@@ -465,17 +504,39 @@ fun HomeScreen(
       if (uiState.cachedCatalog.isNotEmpty()) {
         item {
           SectionHeader(
-            title = "Offline Catalog",
-            actionLabel = "Search",
+            title = "Live Retail Catalog",
+            actionLabel = "Browse All",
             onAction = onOpenDiscover,
           )
         }
-        items(uiState.cachedCatalog.take(3), key = { it.barcode }) { product ->
-          ProductSummaryCard(
-            product = product,
-            onClick = { onOpenProduct(product.barcode) },
-            modifier = Modifier.animateItem(),
-          )
+        val homeCatalog = uiState.cachedCatalog.take(6)
+        if (isWide) {
+          val catalogRows = homeCatalog.chunked(2)
+          items(catalogRows) { pair ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              pair.forEach { product ->
+                ProductSummaryCard(
+                  product = product,
+                  onClick = { onOpenProduct(product.barcode) },
+                  modifier = Modifier.weight(1f),
+                )
+              }
+              if (pair.size == 1) {
+                Spacer(Modifier.weight(1f))
+              }
+            }
+          }
+        } else {
+          items(homeCatalog.take(4), key = { it.barcode }) { product ->
+            ProductSummaryCard(
+              product = product,
+              onClick = { onOpenProduct(product.barcode) },
+              modifier = Modifier.animateItem(),
+            )
+          }
         }
       }
 
@@ -490,15 +551,15 @@ private fun EmptyScanWelcomeCard(
   onTryPopularCode: (String) -> Unit,
 ) {
   Surface(
-    shape = RoundedCornerShape(16.dp),
+    shape = RoundedCornerShape(18.dp),
     color = MaterialTheme.colorScheme.surface,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
         .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -508,18 +569,18 @@ private fun EmptyScanWelcomeCard(
           painter = painterResource(id = R.drawable.img_scan_hero),
           contentDescription = "Scan any product barcode",
           modifier = Modifier
-            .size(72.dp)
-            .clip(RoundedCornerShape(12.dp)),
+            .size(74.dp)
+            .clip(RoundedCornerShape(14.dp)),
           contentScale = ContentScale.Crop,
         )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
           Text(
             text = "Scan your first product",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
           )
           Text(
-            text = "Open the barcode camera or inspect a sample item below to compare store prices.",
+            text = "Aim the barcode camera or tap a sample item below to compare live store prices.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -547,12 +608,12 @@ private fun EmptyScanWelcomeCard(
         onClick = onOpenScan,
         modifier = Modifier
           .fillMaxWidth()
-          .height(48.dp),
-        shape = RoundedCornerShape(10.dp),
+          .height(50.dp),
+        shape = RoundedCornerShape(12.dp),
       ) {
         Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text("Open Barcode Scanner")
+        Text("Open Barcode Scanner", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
       }
     }
   }
@@ -562,38 +623,39 @@ private fun EmptyScanWelcomeCard(
 private fun QuickAccessTile(
   icon: ImageVector,
   label: String,
+  accent: Color,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   Surface(
     modifier = modifier
-      .clip(RoundedCornerShape(12.dp))
+      .clip(RoundedCornerShape(18.dp))
       .bounceClickable(onClick = onClick),
     color = MaterialTheme.colorScheme.surface,
-    shape = RoundedCornerShape(12.dp),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    shape = RoundedCornerShape(18.dp),
+    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
   ) {
     Column(
-      modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+      modifier = Modifier.padding(vertical = 14.dp, horizontal = 6.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(6.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(8.dp),
+        color = accent.copy(alpha = 0.14f),
+        shape = RoundedCornerShape(11.dp),
       ) {
         Icon(
           icon,
           contentDescription = label,
-          tint = MaterialTheme.colorScheme.primary,
+          tint = accent,
           modifier = Modifier
-            .padding(8.dp)
-            .size(18.dp),
+            .padding(9.dp)
+            .size(19.dp),
         )
       }
       Text(
         text = label,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -631,7 +693,7 @@ private fun ScanActivityAnalyticsCard(
 
   Surface(
     modifier = modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(16.dp),
+    shape = RoundedCornerShape(18.dp),
     color = MaterialTheme.colorScheme.surface,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   ) {
@@ -772,10 +834,10 @@ private fun CampaignHighlightCard(
   onSubmitReceipt: () -> Unit,
 ) {
   Surface(
-    modifier = Modifier.width(264.dp),
-    shape = RoundedCornerShape(14.dp),
+    modifier = Modifier.width(268.dp),
+    shape = RoundedCornerShape(16.dp),
     color = MaterialTheme.colorScheme.surface,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
   ) {
     Column(
       modifier = Modifier
@@ -796,12 +858,12 @@ private fun CampaignHighlightCard(
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.weight(1f),
         )
-        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(6.dp)) {
+        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(999.dp)) {
           Text(
             text = "+${campaign.rewardPoints} PTS",
             style = TabularDataStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize, fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
           )
         }
       }
@@ -822,7 +884,7 @@ private fun CampaignHighlightCard(
       AnimatedButton(
         onClick = onSubmitReceipt,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(
           containerColor = MaterialTheme.colorScheme.primaryContainer,
           contentColor = MaterialTheme.colorScheme.primary,
@@ -847,9 +909,9 @@ private fun RecentScanWithRescanCard(
     modifier = modifier
       .fillMaxWidth()
       .sharedProductBounds("product_card_${scan.barcodeValue}")
-      .clip(RoundedCornerShape(14.dp))
+      .clip(RoundedCornerShape(16.dp))
       .bounceClickable(onClick = onInspect),
-    shape = RoundedCornerShape(14.dp),
+    shape = RoundedCornerShape(16.dp),
     color = MaterialTheme.colorScheme.surface,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
   ) {
@@ -936,7 +998,7 @@ private fun RecentScanWithRescanCard(
         }
         AnimatedOutlinedButton(
           onClick = onRescan,
-          shape = RoundedCornerShape(8.dp),
+          shape = RoundedCornerShape(10.dp),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         ) {
           Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))

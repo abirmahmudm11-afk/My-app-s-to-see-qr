@@ -72,9 +72,10 @@ import com.example.ui.components.AnimatedOutlinedButton
 import com.example.ui.components.AnimatedTextButton
 import com.example.ui.components.ReceiptStatusBadge
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatTimestamp
-import com.example.ui.theme.LedgerDeckBrush
+import com.example.ui.theme.HeroMintVaultBrush
 import com.example.ui.theme.LedgerJadeDark
 import com.example.ui.theme.SignalIndigo
 import com.example.ui.theme.TabularDataStyle
@@ -90,6 +91,7 @@ fun AdminConsoleScreen(
   onApproveReceipt: (ReceiptSubmission, Long) -> Unit,
   onRejectReceipt: (ReceiptSubmission, String) -> Unit,
   onCreateCampaign: (partnerName: String, title: String, terms: String, rewardPoints: Long, countries: List<String>) -> Unit,
+  onSeedStarterCampaigns: () -> Unit = {},
   onUpdateCampaignStatus: (Campaign, CampaignStatus) -> Unit,
   onVerifyProduct: (CatalogProduct) -> Unit,
   onCompleteDeletion: (DeletionRequest) -> Unit,
@@ -115,12 +117,12 @@ fun AdminConsoleScreen(
   Column(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .atmosphericBackdrop(),
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(LedgerDeckBrush)
+        .background(HeroMintVaultBrush)
         .padding(horizontal = 12.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -378,13 +380,44 @@ fun AdminConsoleScreen(
                 }
               }
 
-              item { SectionHeader("Manage Campaigns (${uiState.allCampaigns.size})") }
+              item {
+                SectionHeader(
+                  title = "Manage Campaigns (${uiState.allCampaigns.size})",
+                  actionLabel = if (uiState.allCampaigns.isEmpty()) "Seed Starters" else null,
+                  onAction = if (uiState.allCampaigns.isEmpty()) onSeedStarterCampaigns else null,
+                )
+              }
+              if (uiState.allCampaigns.isEmpty()) {
+                item {
+                  Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+                  ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                      Text("No partner campaigns published yet", style = MaterialTheme.typography.titleMedium)
+                      Text(
+                        text = "Publish 3 starter retail campaigns immediately or create a custom campaign below.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      )
+                      AnimatedButton(
+                        onClick = onSeedStarterCampaigns,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                      ) {
+                        Text("Publish 3 Starter Campaigns")
+                      }
+                    }
+                  }
+                }
+              }
               items(uiState.allCampaigns, key = { it.id }) { camp ->
                 val isActive = camp.status == CampaignStatus.ACTIVE.name
                 Surface(
                   shape = RoundedCornerShape(12.dp),
                   color = MaterialTheme.colorScheme.surface,
-                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                  border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
                 ) {
                   Row(
                     modifier = Modifier

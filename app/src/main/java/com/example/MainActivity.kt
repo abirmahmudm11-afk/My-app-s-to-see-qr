@@ -197,27 +197,32 @@ private fun Scan2MoneyRoot(container: AppContainer) {
           Box(
             modifier = Modifier
               .fillMaxSize()
-              .background(MaterialTheme.colorScheme.background),
+              .background(com.example.ui.theme.CarbonCanvas),
             contentAlignment = Alignment.Center,
           ) {
             Column(
               horizontalAlignment = Alignment.CenterHorizontally,
-              verticalArrangement = Arrangement.spacedBy(12.dp),
+              verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-              Icon(
-                imageVector = Icons.Rounded.QrCodeScanner,
-                contentDescription = "SCAN2MONEY",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(40.dp),
-              )
+              androidx.compose.material3.Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                color = com.example.ui.theme.CarbonSurface,
+                border = androidx.compose.foundation.BorderStroke(1.2.dp, com.example.ui.theme.MintGlowBorderBrush),
+              ) {
+                Icon(
+                  imageVector = Icons.Rounded.QrCodeScanner,
+                  contentDescription = "SCAN2MONEY",
+                  tint = com.example.ui.theme.SignalIndigoDark,
+                  modifier = Modifier.padding(16.dp).size(40.dp),
+                )
+              }
               Text(
                 text = "SCAN2MONEY",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
+                style = MaterialTheme.typography.headlineMedium,
+                color = com.example.ui.theme.CarbonInkPrimary,
               )
-              Spacer(Modifier.height(4.dp))
               CircularProgressIndicator(
-                color = MaterialTheme.colorScheme.primary,
+                color = com.example.ui.theme.SignalIndigoDark,
                 strokeWidth = 2.5.dp,
                 modifier = Modifier.size(24.dp),
               )
@@ -400,6 +405,10 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                             DiscoverScreen(
                               uiState = uiState,
                               onSearch = { q -> mainViewModel.searchCatalog(q) },
+                              onSelectCategory = { tag, fallback ->
+                                mainViewModel.filterCatalogCategory(tag, fallback)
+                              },
+                              onRefreshCatalog = { mainViewModel.refreshLiveCatalog() },
                               onOpenProduct = { barcode -> navController.navigate(Routes.productDetail(barcode)) },
                               onOpenScan = { navigateTopLevel(Routes.SCAN) },
                             )
@@ -616,6 +625,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                             onCreateCampaign = { partner, title, terms, pts, countries ->
                               mainViewModel.createCampaign(partner, title, terms, pts, countries)
                             },
+                            onSeedStarterCampaigns = { mainViewModel.seedStarterCampaigns() },
                             onUpdateCampaignStatus = { camp, status -> mainViewModel.updateCampaignStatus(camp, status) },
                             onVerifyProduct = { product -> mainViewModel.verifyCatalogProduct(product) },
                             onCompleteDeletion = { req -> mainViewModel.completeDeletionRequest(req) },
@@ -641,37 +651,53 @@ private fun AdaptiveBottomNavigationBar(
   onSelectTab: (String) -> Unit,
 ) {
   Column {
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f))
     NavigationBar(
       containerColor = MaterialTheme.colorScheme.surface,
       tonalElevation = 0.dp,
     ) {
       tabs.forEachIndexed { idx, tab ->
         val selected = currentRoute == tab.route || (currentRoute == Routes.DISCOVER && idx == 0)
+        val isScanTab = tab.route == Routes.SCAN
         NavigationBarItem(
           selected = selected,
           onClick = { onSelectTab(tab.route) },
           modifier = Modifier.testTag("nav_tab_${tab.label.lowercase()}"),
           icon = {
-            Icon(
-              imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-              contentDescription = tab.label,
-            )
+            if (isScanTab && !selected) {
+              androidx.compose.material3.Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+              ) {
+                Icon(
+                  imageVector = tab.selectedIcon,
+                  contentDescription = tab.label,
+                  tint = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp).size(20.dp),
+                )
+              }
+            } else {
+              Icon(
+                imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                contentDescription = tab.label,
+              )
+            }
           },
           label = {
             Text(
               text = tab.label,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
-              fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+              fontWeight = if (selected || isScanTab) FontWeight.Bold else FontWeight.Medium,
             )
           },
           colors = NavigationBarItemDefaults.colors(
             selectedIconColor = MaterialTheme.colorScheme.primary,
             selectedTextColor = MaterialTheme.colorScheme.primary,
             indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedIconColor = if (isScanTab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = if (isScanTab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
           ),
         )
       }
@@ -692,12 +718,18 @@ private fun AdaptiveNavigationRail(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(vertical = 12.dp),
       ) {
-        Icon(
-          imageVector = Icons.Rounded.QrCodeScanner,
-          contentDescription = "SCAN2MONEY",
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(28.dp),
-        )
+        androidx.compose.material3.Surface(
+          color = MaterialTheme.colorScheme.primaryContainer,
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+          border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.QrCodeScanner,
+            contentDescription = "SCAN2MONEY",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(8.dp).size(24.dp),
+          )
+        }
       }
     },
   ) {
@@ -719,7 +751,7 @@ private fun AdaptiveNavigationRail(
             text = tab.label,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
           )
         },
         colors = NavigationRailItemDefaults.colors(
