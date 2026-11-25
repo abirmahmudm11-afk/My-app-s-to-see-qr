@@ -13,6 +13,7 @@ plugins {
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
+  buildToolsVersion = "36.0.0"
 
   defaultConfig {
     applicationId = "com.aistudio.scan2money.k7m4px"
