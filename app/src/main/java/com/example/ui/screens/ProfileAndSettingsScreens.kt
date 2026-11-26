@@ -67,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -1173,6 +1174,10 @@ fun TermsRulesScreen(onBack: () -> Unit) {
 
 @Composable
 fun HelpSupportScreen(onBack: () -> Unit) {
+  val context = LocalContext.current
+  val firebaseProjectId = remember(context) { context.getString(R.string.project_id) }
+  val firestoreDbId = remember(context) { context.getString(R.string.firestore_database_id) }
+
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -1208,6 +1213,31 @@ fun HelpSupportScreen(onBack: () -> Unit) {
             Text("Low Light or Damaged Labels", style = MaterialTheme.typography.titleMedium)
             Text(
               text = "Use the Flash button in the viewfinder, pick a photo from your library, or enter digits via Manual GTIN.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
+      }
+      item {
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+          Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Firebase Project & Account Verification", style = MaterialTheme.typography.titleMedium)
+            Text(
+              text = "Firebase Project ID: $firebaseProjectId",
+              style = TabularDataStyle,
+            )
+            Text(
+              text = "Firestore Database ID: $firestoreDbId",
+              style = TabularDataStyle,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+              text = "Accounts sign in securely with Google via Credential Manager, which verifies Gmail addresses automatically for wallet sync and Admin Console access.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

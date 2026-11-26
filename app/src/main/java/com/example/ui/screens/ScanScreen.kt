@@ -168,7 +168,8 @@ fun ScanScreen(
   var boundCamera by remember { mutableStateOf<Camera?>(null) }
   var showManualDialog by remember { mutableStateOf(false) }
   var showIdleTip by remember { mutableStateOf(false) }
-  var manualCode by remember { mutableStateOf(scanContext?.barcodeValue ?: "") }
+  var manualCode by remember(scanContext?.barcodeValue) { mutableStateOf(scanContext?.barcodeValue ?: "") }
+  var manualError by remember { mutableStateOf<String?>(null) }
 
   val feedbackPlayer = remember { BarcodeFeedbackPlayer() }
   val rippleProgress = remember { Animatable(0f) }
@@ -247,7 +248,9 @@ fun ScanScreen(
       )
       .build()
   }
-  val mlKitScanner = remember { BarcodeScanning.getClient(barcodeOptions) }
+  val mlKitScanner = remember {
+    runCatching { BarcodeScanning.getClient(barcodeOptions) }.getOrNull()
+  }
   val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
 
   // Google Play Policy compliant zero-permission Photo Picker
@@ -255,10 +258,15 @@ fun ScanScreen(
     contract = ActivityResultContracts.PickVisualMedia(),
   ) { uri: Uri? ->
     if (uri != null) {
+      val activeScanner = mlKitScanner
+      if (activeScanner == null) {
+        onShowMessage("Barcode decoder unavailable in this environment.")
+        return@rememberLauncherForActivityResult
+      }
       isDecodingPhoto = true
       runCatching {
         val image = InputImage.fromFilePath(context, uri)
-        mlKitScanner.process(image)
+        activeScanner.process(image)
           .addOnSuccessListener { barcodes ->
             isDecodingPhoto = false
             val first = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
@@ -286,7 +294,7 @@ fun ScanScreen(
   DisposableEffect(Unit) {
     onDispose {
       feedbackPlayer.release()
-      runCatching { mlKitScanner.close() }
+      runCatching { mlKitScanner?.close() }
       runCatching { analysisExecutor.shutdown() }
     }
   }
@@ -365,7 +373,10 @@ fun ScanScreen(
             Icon(Icons.Rounded.History, contentDescription = "Scan History", tint = Color.White)
           }
           AnimatedIconButton(
-            onClick = { showManualDialog = true },
+            onClick = {
+              manualError = null
+              showManualDialog = true
+            },
             modifier = Modifier.testTag("scanner_manual_icon_button"),
           ) {
             Icon(Icons.Rounded.Edit, contentDescription = "Enter GTIN manually", tint = Color.White)
@@ -992,7 +1003,10 @@ fun ScanScreen(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         AnimatedOutlinedButton(
-          onClick = { showManualDialog = true },
+          onClick = {
+            manualError = null
+            showManualDialog = true
+          },
           modifier = Modifier
             .weight(1f)
             .testTag("scanner_manual_entry_button"),
@@ -1060,7 +1074,10 @@ fun ScanScreen(
 
   if (showManualDialog) {
     AlertDialog(
-      onDismissRequest = { showManualDialog = false },
+      onDismissRequest = {
+        manualError = null
+        showManualDialog = false
+      },
       title = { Text("Enter Barcode / GTIN") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1070,30 +1087,56 @@ fun ScanScreen(
           )
           OutlinedTextField(
             value = manualCode,
-            onValueChange = { manualCode = it },
+            onValueChange = {
+              manualCode = it
+              manualError = null
+            },
             label = { Text("Barcode value") },
             singleLine = true,
+            isError = manualError != null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("manual_barcode_input"),
           )
+          manualError?.let { err ->
+            Text(
+              text = err,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.error,
+              modifier = Modifier.testTag("manual_barcode_error"),
+            )
+          }
         }
       },
       confirmButton = {
         AnimatedButton(
           onClick = {
+            val trimmed = manualCode.trim()
+            if (trimmed.isEmpty()) {
+              manualError = "Enter a barcode or QR value first."
+              return@AnimatedButton
+            }
+            manualError = null
             showManualDialog = false
             scannerViewModel.processScannedBarcode(
-              rawValue = manualCode,
+              rawValue = trimmed,
               format = SupportedBarcodeFormat.MANUAL,
               fromCamera = false,
             )
           },
+          modifier = Modifier.testTag("manual_barcode_submit_button"),
         ) {
           Text("Look Up")
         }
       },
       dismissButton = {
-        AnimatedTextButton(onClick = { showManualDialog = false }) { Text("Cancel") }
+        AnimatedTextButton(
+          onClick = {
+            manualError = null
+            showManualDialog = false
+          },
+        ) { Text("Cancel") }
       },
     )
   }
@@ -1103,7 +1146,7 @@ fun ScanScreen(
 @Composable
 private fun CameraXBarcodeViewfinder(
   lifecycleOwner: androidx.lifecycle.LifecycleOwner,
-  scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
+  scanner: com.google.mlkit.vision.barcode.BarcodeScanner?,
   analysisExecutor: java.util.concurrent.ExecutorService,
   paused: Boolean,
   onCameraBound: (Camera) -> Unit,
@@ -1125,12 +1168,19 @@ private fun CameraXBarcodeViewfinder(
     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
     val mainExecutor = ContextCompat.getMainExecutor(context)
     var providerRef: ProcessCameraProvider? = null
+    var cameraRef: Camera? = null
+    var isDisposed = false
     var lastAnalyzedMs = 0L
 
     cameraProviderFuture.addListener(
       {
+        if (isDisposed) return@addListener
         runCatching {
           val cameraProvider = cameraProviderFuture.get()
+          if (isDisposed) {
+            runCatching { cameraProvider.unbindAll() }
+            return@addListener
+          }
           providerRef = cameraProvider
           val preview = Preview.Builder().build().also {
             it.surfaceProvider = previewView.surfaceProvider
@@ -1152,21 +1202,26 @@ private fun CameraXBarcodeViewfinder(
 
           imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
             val nowMs = android.os.SystemClock.elapsedRealtime()
-            if (pausedState.value || (nowMs - lastAnalyzedMs) < 110L || !isProcessingFrame.compareAndSet(false, true)) {
+            if (isDisposed || pausedState.value || (nowMs - lastAnalyzedMs) < 110L || !isProcessingFrame.compareAndSet(false, true)) {
               imageProxy.close()
               return@setAnalyzer
             }
             val mediaImage = imageProxy.image
-            if (mediaImage != null) {
+            if (mediaImage != null && scanner != null) {
               lastAnalyzedMs = nowMs
               val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
               scanner.process(inputImage)
                 .addOnSuccessListener { barcodes ->
+                  if (isDisposed) return@addOnSuccessListener
                   val match = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
                   if (match != null) {
                     val value = match.rawValue.orEmpty()
                     val fmt = SupportedBarcodeFormat.fromMlKitFormat(match.format)
-                    mainExecutor.execute { latestOnBarcodeDetected(value, fmt) }
+                    mainExecutor.execute {
+                      if (!isDisposed) {
+                        latestOnBarcodeDetected(value, fmt)
+                      }
+                    }
                   }
                 }
                 .addOnCompleteListener {
@@ -1186,6 +1241,7 @@ private fun CameraXBarcodeViewfinder(
             preview,
             imageAnalysis,
           )
+          cameraRef = camera
           onCameraBound(camera)
         }
       },
@@ -1193,6 +1249,8 @@ private fun CameraXBarcodeViewfinder(
     )
 
     onDispose {
+      isDisposed = true
+      runCatching { cameraRef?.cameraControl?.enableTorch(false) }
       runCatching { providerRef?.unbindAll() }
     }
   }

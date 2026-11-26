@@ -218,4 +218,59 @@ class DomainLogicUnitTest {
     assertTrue(offers.all { it.isSimulated && it.currencyCode == "USD" && it.price > 0.0 })
     assertEquals(offers.sortedBy { it.price }, offers)
   }
+
+  @Test
+  fun priceHistoryEntryPreservesMetadataAndSortsChronologically() {
+    val older = com.example.data.model.PriceHistoryEntry(
+      id = "ph_1",
+      barcode = "3017620422003",
+      storeName = "Target",
+      price = 5.49,
+      currencyCode = "USD",
+      countryCode = "US",
+      sourceProvider = "Simulated Market",
+      verified = false,
+      recordedAt = Timestamp(1_700_000_000L, 0),
+    )
+    val newer = com.example.data.model.PriceHistoryEntry(
+      id = "ph_2",
+      barcode = "3017620422003",
+      storeName = "Walmart",
+      price = 4.99,
+      currencyCode = "USD",
+      countryCode = "US",
+      sourceProvider = "User Report",
+      verified = true,
+      recordedAt = Timestamp(1_700_100_000L, 0),
+    )
+    val sorted = listOf(newer, older).sortedBy { it.recordedAt?.seconds ?: 0L }
+    assertEquals(listOf(older, newer), sorted)
+    assertEquals(4.99, sorted.minOf { it.price }, 0.001)
+    assertEquals(5.49, sorted.maxOf { it.price }, 0.001)
+    assertTrue(newer.verified)
+  }
+
+  @Test
+  fun walletEarnedPointsCombinesActiveRedeemedAndReversedBalances() {
+    val wallet = RewardWallet(
+      availablePoints = 150L,
+      pendingPoints = 50L,
+      redeemedPoints = 200L,
+      reversedPoints = 70L,
+    )
+    val txs = listOf(
+      RewardTransaction(id = "t1", transactionType = "RECEIPT_REWARD", amount = 320L, status = "CREDITED"),
+      RewardTransaction(id = "t2", transactionType = "CAMPAIGN_BONUS", amount = 100L, status = "CREDITED"),
+      RewardTransaction(id = "t3", transactionType = "REDEMPTION", amount = 200L, status = "REDEEMED"),
+    )
+    val fromLedger = txs.filter {
+      (it.transactionType == "RECEIPT_REWARD" || it.transactionType == "CAMPAIGN_BONUS") &&
+        (it.status == "CREDITED" || it.status == "APPROVED" || it.status == "REVERSED")
+    }.sumOf { it.amount }
+    val totalEarned = maxOf(
+      fromLedger,
+      wallet.availablePoints + wallet.redeemedPoints + wallet.reversedPoints,
+    )
+    assertEquals(420L, totalEarned)
+  }
 }

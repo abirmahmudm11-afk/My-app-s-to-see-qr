@@ -724,6 +724,12 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
     }
   }
 
+  suspend fun fetchUserLedgerForAdmin(userId: String): Pair<RewardWallet, List<RewardTransaction>> {
+    val wallet = container.adminRepository.fetchUserWalletSnapshot(userId)
+    val txs = container.adminRepository.fetchUserTransactions(userId)
+    return wallet to txs
+  }
+
   companion object {
     fun factory(container: AppContainer): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
       @Suppress("UNCHECKED_CAST")

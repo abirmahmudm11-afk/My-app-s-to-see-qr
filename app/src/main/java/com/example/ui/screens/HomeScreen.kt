@@ -71,6 +71,7 @@ import com.example.data.model.Campaign
 import com.example.data.model.ScanContext
 import com.example.data.model.ScanRecord
 import com.example.domain.MarketConfig
+import com.example.ui.components.AdMobBannerSlot
 import com.example.ui.components.AnimatedButton
 import com.example.ui.components.AnimatedIconButton
 import com.example.ui.components.AnimatedOutlinedButton
@@ -182,7 +183,10 @@ fun HomeScreen(
                 shape = CircleShape,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
               ) {
-                AnimatedIconButton(onClick = onOpenAdmin) {
+                AnimatedIconButton(
+                  onClick = onOpenAdmin,
+                  modifier = Modifier.testTag("home_admin_button"),
+                ) {
                   Icon(
                     Icons.Rounded.AdminPanelSettings,
                     contentDescription = "Admin Console",
@@ -539,6 +543,8 @@ fun HomeScreen(
           }
         }
       }
+
+      item { AdMobBannerSlot() }
 
       item { Spacer(Modifier.height(12.dp)) }
     }
@@ -903,7 +909,7 @@ private fun RecentScanWithRescanCard(
   onRescan: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  var menuExpanded by remember { mutableStateOf(false) }
+  var menuExpanded by remember(scan.id, scan.barcodeValue, scan.localTimestampMs) { mutableStateOf(false) }
 
   Surface(
     modifier = modifier

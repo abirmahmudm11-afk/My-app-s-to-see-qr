@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.CompareArrows
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.QrCodeScanner
@@ -70,7 +72,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -84,10 +90,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.OfferAvailability
+import com.example.data.model.PriceHistoryEntry
 import com.example.data.model.ProductOffer
 import com.example.data.repository.ComparedOffer
 import com.example.domain.CampaignEligibilityEngine
 import com.example.domain.MarketConfig
+import com.example.ui.components.AdMobBannerSlot
 import com.example.ui.components.AnimatedButton
 import com.example.ui.components.AnimatedIconButton
 import com.example.ui.components.AnimatedOutlinedButton
@@ -98,6 +106,7 @@ import com.example.ui.components.SectionHeader
 import com.example.ui.components.VerificationLabel
 import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
+import com.example.ui.components.formatTimestamp
 import com.example.ui.components.sharedProductBounds
 import com.example.ui.theme.TabularDataStyle
 import com.example.ui.viewmodel.MainUiState
@@ -410,6 +419,9 @@ fun DiscoverScreen(
           }
         }
       }
+      item { AdMobBannerSlot() }
+
+      item { Spacer(Modifier.height(12.dp)) }
     }
   }
 }
@@ -432,15 +444,17 @@ fun ProductDetailScreen(
   val listState = rememberLazyListState()
   val scope = rememberCoroutineScope()
 
-  var showAddOfferDialog by remember { mutableStateOf(false) }
-  var storeInput by remember { mutableStateOf("") }
-  var priceInput by remember { mutableStateOf("") }
-  var offerUrlInput by remember { mutableStateOf("") }
+  var showAddOfferDialog by remember(barcode) { mutableStateOf(false) }
+  var storeInput by remember(barcode) { mutableStateOf("") }
+  var priceInput by remember(barcode) { mutableStateOf("") }
+  var offerUrlInput by remember(barcode) { mutableStateOf("") }
+  var offerFormError by remember(barcode) { mutableStateOf<String?>(null) }
 
-  var newName by remember { mutableStateOf("") }
-  var newBrand by remember { mutableStateOf("") }
-  var newCategory by remember { mutableStateOf("") }
-  var newDescription by remember { mutableStateOf("") }
+  var newName by remember(barcode) { mutableStateOf("") }
+  var newBrand by remember(barcode) { mutableStateOf("") }
+  var newCategory by remember(barcode) { mutableStateOf("") }
+  var newDescription by remember(barcode) { mutableStateOf("") }
+  var productFormError by remember(barcode) { mutableStateOf<String?>(null) }
 
   LaunchedEffect(barcode, market.countryCode) {
     productDetailViewModel.load(barcode, market.countryCode)
@@ -469,7 +483,7 @@ fun ProductDetailScreen(
     }
   }
 
-  val shareProductAction = {
+  val shareProductAction: () -> Unit = {
     val lowestOffer = detailState.offers.minByOrNull { it.price }
     val shareBody = buildString {
       append(product?.name ?: "Product Barcode $barcode")
@@ -487,7 +501,12 @@ fun ProductDetailScreen(
       putExtra(Intent.EXTRA_SUBJECT, product?.name ?: "SCAN2MONEY Product $barcode")
       putExtra(Intent.EXTRA_TEXT, shareBody)
     }
-    context.startActivity(Intent.createChooser(intent, "Share Product Details"))
+    runCatching {
+      context.startActivity(Intent.createChooser(intent, "Share Product Details"))
+    }.onFailure {
+      onShowMessage("No sharing app available on this device.")
+    }
+    Unit
   }
 
   Box(
@@ -588,8 +607,12 @@ fun ProductDetailScreen(
               )
               OutlinedTextField(
                 value = newName,
-                onValueChange = { newName = it },
+                onValueChange = {
+                  newName = it
+                  productFormError = null
+                },
                 label = { Text("Product Name *") },
+                isError = productFormError != null,
                 modifier = Modifier.fillMaxWidth(),
               )
               OutlinedTextField(
@@ -610,6 +633,13 @@ fun ProductDetailScreen(
                 label = { Text("Notes / Size") },
                 modifier = Modifier.fillMaxWidth(),
               )
+              productFormError?.let { err ->
+                Text(
+                  text = err,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.error,
+                )
+              }
               AnimatedButton(
                 onClick = triggerCompareOffers,
                 modifier = Modifier
@@ -626,13 +656,16 @@ fun ProductDetailScreen(
                 onClick = {
                   if (!isSignedIn) {
                     onSignInRequested()
+                  } else if (newName.trim().isEmpty()) {
+                    productFormError = "Enter a product name before saving."
                   } else {
+                    productFormError = null
                     productDetailViewModel.submitUnverifiedProduct(
                       barcode = barcode,
-                      name = newName,
-                      brand = newBrand,
-                      category = newCategory,
-                      description = newDescription,
+                      name = newName.trim(),
+                      brand = newBrand.trim(),
+                      category = newCategory.trim(),
+                      description = newDescription.trim(),
                     )
                   }
                 },
@@ -856,6 +889,21 @@ fun ProductDetailScreen(
           }
         }
 
+        item {
+          PriceHistorySectionCard(
+            priceHistory = detailState.priceHistory,
+            fallbackCurrency = market.currencyCode,
+            onReportPrice = {
+              if (isSignedIn) {
+                offerFormError = null
+                showAddOfferDialog = true
+              } else {
+                onSignInRequested()
+              }
+            },
+          )
+        }
+
         if (mainUiState.campaigns.isNotEmpty()) {
           item { SectionHeader("Campaign Eligibility (${market.countryCode})") }
           items(mainUiState.campaigns, key = { it.id }) { campaign ->
@@ -911,7 +959,12 @@ fun ProductDetailScreen(
             title = "Regional Offers (${market.countryCode})",
             actionLabel = "Report Price",
             onAction = {
-              if (isSignedIn) showAddOfferDialog = true else onSignInRequested()
+              if (isSignedIn) {
+                offerFormError = null
+                showAddOfferDialog = true
+              } else {
+                onSignInRequested()
+              }
             },
           )
         }
@@ -933,7 +986,12 @@ fun ProductDetailScreen(
                 )
                 AnimatedOutlinedButton(
                   onClick = {
-                    if (isSignedIn) showAddOfferDialog = true else onSignInRequested()
+                    if (isSignedIn) {
+                      offerFormError = null
+                      showAddOfferDialog = true
+                    } else {
+                      onSignInRequested()
+                    }
                   },
                   shape = RoundedCornerShape(10.dp),
                 ) {
@@ -955,7 +1013,11 @@ fun ProductDetailScreen(
                   type = "text/plain"
                   putExtra(Intent.EXTRA_TEXT, shareText)
                 }
-                context.startActivity(Intent.createChooser(intent, "Share Store Offer"))
+                runCatching {
+                  context.startActivity(Intent.createChooser(intent, "Share Store Offer"))
+                }.onFailure {
+                  onShowMessage("No sharing app available on this device.")
+                }
               },
             )
           }
@@ -966,7 +1028,10 @@ fun ProductDetailScreen(
 
   if (showAddOfferDialog) {
     AlertDialog(
-      onDismissRequest = { showAddOfferDialog = false },
+      onDismissRequest = {
+        offerFormError = null
+        showAddOfferDialog = false
+      },
       title = { Text("Report Price Observation") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -976,45 +1041,73 @@ fun ProductDetailScreen(
           )
           OutlinedTextField(
             value = storeInput,
-            onValueChange = { storeInput = it },
+            onValueChange = {
+              storeInput = it
+              offerFormError = null
+            },
             label = { Text("Store Name *") },
             modifier = Modifier.fillMaxWidth(),
           )
           OutlinedTextField(
             value = priceInput,
-            onValueChange = { priceInput = it },
+            onValueChange = {
+              priceInput = it
+              offerFormError = null
+            },
             label = { Text("Price (${market.currencyCode}) *") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
           )
           OutlinedTextField(
             value = offerUrlInput,
-            onValueChange = { offerUrlInput = it },
+            onValueChange = {
+              offerUrlInput = it
+              offerFormError = null
+            },
             label = { Text("Offer Link (optional)") },
             modifier = Modifier.fillMaxWidth(),
           )
+          offerFormError?.let { err ->
+            Text(
+              text = err,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.error,
+            )
+          }
         }
       },
       confirmButton = {
         AnimatedButton(
           onClick = {
-            val parsedPrice = priceInput.toDoubleOrNull() ?: 0.0
-            showAddOfferDialog = false
-            productDetailViewModel.submitUnverifiedOffer(
-              barcode = barcode,
-              storeName = storeInput,
-              price = parsedPrice,
-              currencyCode = market.currencyCode,
-              countryCode = market.countryCode,
-              offerUrl = offerUrlInput,
-            )
+            val parsedPrice = priceInput.toDoubleOrNull()
+            when {
+              storeInput.trim().isEmpty() -> offerFormError = "Enter a store name."
+              parsedPrice == null || parsedPrice !in 0.01..1_000_000.0 -> offerFormError = "Enter a valid price above 0."
+              else -> {
+                offerFormError = null
+                showAddOfferDialog = false
+                productDetailViewModel.submitUnverifiedOffer(
+                  barcode = barcode,
+                  storeName = storeInput.trim(),
+                  price = parsedPrice,
+                  currencyCode = market.currencyCode,
+                  countryCode = market.countryCode,
+                  offerUrl = offerUrlInput.trim(),
+                )
+              }
+            }
           },
         ) {
           Text("Submit Price")
         }
       },
       dismissButton = {
-        AnimatedTextButton(onClick = { showAddOfferDialog = false }) { Text("Cancel") }
+        AnimatedTextButton(
+          onClick = {
+            offerFormError = null
+            showAddOfferDialog = false
+          },
+        ) { Text("Cancel") }
       },
     )
   }
@@ -1147,7 +1240,9 @@ fun OfferDetailScreen(
               type = "text/plain"
               putExtra(Intent.EXTRA_TEXT, text)
             }
-            context.startActivity(Intent.createChooser(intent, "Share Store Offer"))
+            runCatching {
+              context.startActivity(Intent.createChooser(intent, "Share Store Offer"))
+            }
           },
         ) {
           Icon(Icons.Rounded.Share, contentDescription = "Share Offer")
@@ -1513,6 +1608,183 @@ private fun ComparedOfferItemRow(
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
+    }
+  }
+}
+
+@Composable
+private fun PriceHistorySectionCard(
+  priceHistory: List<PriceHistoryEntry>,
+  fallbackCurrency: String,
+  onReportPrice: () -> Unit,
+) {
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("product_price_history_card"),
+    shape = RoundedCornerShape(16.dp),
+    color = MaterialTheme.colorScheme.surface,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Icon(Icons.Rounded.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+          Column {
+            Text("Price History", style = MaterialTheme.typography.titleLarge)
+            Text(
+              text = "${priceHistory.size} recorded store snapshots",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
+        AnimatedTextButton(onClick = onReportPrice) {
+          Text("Log Price")
+        }
+      }
+
+      if (priceHistory.isEmpty()) {
+        Text(
+          text = "No historical price points recorded for this barcode yet. Compare live prices or report a store price to build the price timeline.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      } else {
+        val currency = priceHistory.firstOrNull()?.currencyCode?.ifBlank { fallbackCurrency } ?: fallbackCurrency
+        val minPrice = priceHistory.minOf { it.price }
+        val maxPrice = priceHistory.maxOf { it.price }
+        val avgPrice = priceHistory.map { it.price }.average()
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          PriceStatTile(
+            label = "Lowest",
+            value = MarketConfig.formatMoney(minPrice, currency),
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.weight(1f),
+          )
+          PriceStatTile(
+            label = "Average",
+            value = MarketConfig.formatMoney(avgPrice, currency),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+          )
+          PriceStatTile(
+            label = "Highest",
+            value = MarketConfig.formatMoney(maxPrice, currency),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+          )
+        }
+
+        val chronological = priceHistory.sortedBy { it.recordedAt?.seconds ?: 0L }.takeLast(12)
+        if (chronological.size >= 2) {
+          val lineColor = MaterialTheme.colorScheme.primary
+          val dotColor = MaterialTheme.colorScheme.secondary
+          val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+          Canvas(
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(84.dp)
+              .clip(RoundedCornerShape(10.dp))
+              .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+              .padding(horizontal = 12.dp, vertical = 14.dp),
+          ) {
+            val minV = chronological.minOf { it.price }
+            val maxV = chronological.maxOf { it.price }
+            val span = (maxV - minV).takeIf { it > 0.001 } ?: 1.0
+            val count = chronological.size
+            val path = Path()
+
+            drawLine(
+              color = gridColor,
+              start = Offset(0f, size.height / 2f),
+              end = Offset(size.width, size.height / 2f),
+              strokeWidth = 1.dp.toPx(),
+            )
+
+            chronological.forEachIndexed { idx, entry ->
+              val x = if (count <= 1) size.width / 2f else (idx.toFloat() / (count - 1).toFloat()) * size.width
+              val normY = ((entry.price - minV) / span).toFloat().coerceIn(0f, 1f)
+              val y = size.height - (normY * size.height)
+              if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(
+              path = path,
+              color = lineColor,
+              style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round),
+            )
+            chronological.forEachIndexed { idx, entry ->
+              val x = if (count <= 1) size.width / 2f else (idx.toFloat() / (count - 1).toFloat()) * size.width
+              val normY = ((entry.price - minV) / span).toFloat().coerceIn(0f, 1f)
+              val y = size.height - (normY * size.height)
+              drawCircle(
+                color = dotColor,
+                radius = 4.dp.toPx(),
+                center = Offset(x, y),
+              )
+            }
+          }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          priceHistory.take(6).forEach { entry ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(entry.storeName, style = MaterialTheme.typography.titleSmall)
+                Text(
+                  text = "${entry.sourceProvider.ifBlank { "Community" }} · ${formatTimestamp(entry.recordedAt)}",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+              Text(
+                text = MarketConfig.formatMoney(entry.price, entry.currencyCode.ifBlank { fallbackCurrency }),
+                style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun PriceStatTile(
+  label: String,
+  value: String,
+  color: Color,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    modifier = modifier,
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+    shape = RoundedCornerShape(10.dp),
+  ) {
+    Column(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text(value, style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = color)
     }
   }
 }

@@ -66,6 +66,7 @@ import com.example.data.model.PayoutStatus
 import com.example.data.model.RewardTransaction
 import com.example.data.model.TransactionStatus
 import com.example.domain.MarketConfig
+import com.example.ui.components.AdMobBannerSlot
 import com.example.ui.components.AnimatedButton
 import com.example.ui.components.AnimatedIconButton
 import com.example.ui.components.AnimatedOutlinedButton
@@ -119,9 +120,39 @@ fun RewardsScreen(
   var showPayoutDialog by remember { mutableStateOf(false) }
   var payoutPointsInput by remember { mutableStateOf("100") }
   var payoutTitleInput by remember { mutableStateOf("Cashout Payout") }
-  var payoutHandleInput by remember { mutableStateOf(uiState.firebaseUser?.email ?: "") }
+  var payoutHandleInput by remember(uiState.firebaseUser?.uid) {
+    mutableStateOf(uiState.firebaseUser?.email ?: "")
+  }
   var selectedMethod by remember { mutableStateOf(PayoutMethod.PAYPAL_SANDBOX) }
+  var payoutError by remember { mutableStateOf<String?>(null) }
+  var ledgerFilter by remember { mutableStateOf("All") }
   val isSignedIn = uiState.firebaseUser != null
+
+  val totalEarnedPoints = remember(uiState.transactions, uiState.wallet) {
+    val fromLedger = uiState.transactions
+      .filter {
+        (it.transactionType == "RECEIPT_REWARD" || it.transactionType == "CAMPAIGN_BONUS") &&
+          (it.status == "CREDITED" || it.status == "APPROVED" || it.status == "REVERSED")
+      }
+      .sumOf { it.amount }
+    maxOf(
+      fromLedger,
+      uiState.wallet.availablePoints + uiState.wallet.redeemedPoints + uiState.wallet.reversedPoints,
+    )
+  }
+
+  val filteredTransactions = remember(uiState.transactions, ledgerFilter) {
+    when (ledgerFilter) {
+      "Earned" -> uiState.transactions.filter {
+        it.transactionType == "RECEIPT_REWARD" || it.transactionType == "CAMPAIGN_BONUS"
+      }
+      "Redemptions" -> uiState.transactions.filter { it.transactionType == "REDEMPTION" }
+      "Reversals" -> uiState.transactions.filter {
+        it.transactionType == "REVERSAL" || it.status == "REVERSED"
+      }
+      else -> uiState.transactions
+    }
+  }
 
   BoxWithConstraints(
     modifier = Modifier
@@ -227,6 +258,21 @@ fun RewardsScreen(
                       shape = RoundedCornerShape(12.dp),
                     ) {
                       Column(Modifier.padding(11.dp)) {
+                        Text(
+                          text = "$totalEarnedPoints PTS",
+                          style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
+                          color = SignalIndigoDark,
+                          modifier = Modifier.testTag("wallet_total_earned_points"),
+                        )
+                        Text("Total earned", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
+                      }
+                    }
+                    Surface(
+                      modifier = Modifier.weight(1f),
+                      color = Color.White.copy(alpha = 0.08f),
+                      shape = RoundedCornerShape(12.dp),
+                    ) {
+                      Column(Modifier.padding(11.dp)) {
                         Text("${uiState.wallet.redeemedPoints} PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = Color.White)
                         Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
                       }
@@ -237,8 +283,8 @@ fun RewardsScreen(
                       shape = RoundedCornerShape(12.dp),
                     ) {
                       Column(Modifier.padding(11.dp)) {
-                        Text("100 PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = SignalIndigoDark)
-                        Text("Minimum cashout ($0 fee)", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
+                        Text("100 PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                        Text("Min cashout ($0 fee)", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
                       }
                     }
                   }
@@ -259,7 +305,12 @@ fun RewardsScreen(
                     }
                     AnimatedOutlinedButton(
                       onClick = {
-                        if (isSignedIn) showPayoutDialog = true else onSignInRequested()
+                        if (isSignedIn) {
+                          payoutError = null
+                          showPayoutDialog = true
+                        } else {
+                          onSignInRequested()
+                        }
                       },
                       modifier = Modifier
                         .weight(1f)
@@ -324,8 +375,23 @@ fun RewardsScreen(
 
               Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
               ) {
+                Surface(
+                  modifier = Modifier.weight(1f),
+                  color = Color.White.copy(alpha = 0.08f),
+                  shape = RoundedCornerShape(12.dp),
+                ) {
+                  Column(Modifier.padding(11.dp)) {
+                    Text(
+                      text = "$totalEarnedPoints PTS",
+                      style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
+                      color = SignalIndigoDark,
+                      modifier = Modifier.testTag("wallet_total_earned_points"),
+                    )
+                    Text("Total earned", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
+                  }
+                }
                 Surface(
                   modifier = Modifier.weight(1f),
                   color = Color.White.copy(alpha = 0.08f),
@@ -342,8 +408,8 @@ fun RewardsScreen(
                   shape = RoundedCornerShape(12.dp),
                 ) {
                   Column(Modifier.padding(11.dp)) {
-                    Text("100 PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = SignalIndigoDark)
-                    Text("Minimum cashout ($0 fee)", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
+                    Text("100 PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                    Text("Min cashout", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
                   }
                 }
               }
@@ -364,7 +430,12 @@ fun RewardsScreen(
                 }
                 AnimatedOutlinedButton(
                   onClick = {
-                    if (isSignedIn) showPayoutDialog = true else onSignInRequested()
+                    if (isSignedIn) {
+                      payoutError = null
+                      showPayoutDialog = true
+                    } else {
+                      onSignInRequested()
+                    }
                   },
                   modifier = Modifier
                     .weight(1f)
@@ -583,20 +654,37 @@ fun RewardsScreen(
         }
       }
 
-      item { SectionHeader("Point Ledger (${uiState.transactions.size})") }
-      if (uiState.transactions.isEmpty()) {
+      item { SectionHeader("Transactions & Redemptions (${filteredTransactions.size})") }
+      item {
+        val ledgerFilters = listOf("All", "Earned", "Redemptions", "Reversals")
+        SlidingSegmentedPillBar(
+          options = ledgerFilters,
+          selectedIndex = ledgerFilters.indexOf(ledgerFilter).coerceAtLeast(0),
+          onSelect = { idx -> ledgerFilter = ledgerFilters[idx] },
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("rewards_ledger_filter"),
+        )
+      }
+      if (filteredTransactions.isEmpty()) {
         item {
           StyledEmptySectionCard(
             icon = Icons.Rounded.Stars,
-            title = "Ledger awaiting first transaction",
-            body = "Audited ledger entries appear here once a receipt or payout is processed.",
+            title = if (uiState.transactions.isEmpty()) "Ledger awaiting first transaction" else "No $ledgerFilter entries",
+            body = if (uiState.transactions.isEmpty()) {
+              "Audited ledger entries appear here once a receipt or payout is processed."
+            } else {
+              "Switch filter tabs above or log a new receipt to see matching ledger items."
+            },
           )
         }
       } else {
-        items(uiState.transactions, key = { it.id }) { tx ->
+        items(filteredTransactions, key = { it.id }) { tx ->
           TransactionRowCard(tx = tx, onClick = { onOpenTransaction(tx.id) })
         }
       }
+
+      item { AdMobBannerSlot() }
 
       item { Spacer(Modifier.height(12.dp)) }
     }
@@ -604,7 +692,10 @@ fun RewardsScreen(
 
   if (showPayoutDialog) {
     AlertDialog(
-      onDismissRequest = { showPayoutDialog = false },
+      onDismissRequest = {
+        payoutError = null
+        showPayoutDialog = false
+      },
       title = { Text("Request Reward Payout") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -621,38 +712,71 @@ fun RewardsScreen(
           )
           OutlinedTextField(
             value = payoutPointsInput,
-            onValueChange = { payoutPointsInput = it },
+            onValueChange = {
+              payoutPointsInput = it
+              payoutError = null
+            },
             label = { Text("Points to Redeem (>= 100)") },
+            isError = payoutError != null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
           )
           OutlinedTextField(
             value = payoutTitleInput,
-            onValueChange = { payoutTitleInput = it },
+            onValueChange = {
+              payoutTitleInput = it
+              payoutError = null
+            },
             label = { Text("Reward / Payout Label") },
             modifier = Modifier.fillMaxWidth(),
           )
           OutlinedTextField(
             value = payoutHandleInput,
-            onValueChange = { payoutHandleInput = it },
+            onValueChange = {
+              payoutHandleInput = it
+              payoutError = null
+            },
             label = { Text("Destination Email / Account Handle") },
             modifier = Modifier.fillMaxWidth(),
           )
+          payoutError?.let { err ->
+            Text(
+              text = err,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.error,
+              modifier = Modifier.testTag("payout_dialog_error"),
+            )
+          }
         }
       },
       confirmButton = {
         AnimatedButton(
           onClick = {
-            val pts = payoutPointsInput.toLongOrNull() ?: 100L
-            showPayoutDialog = false
-            onRequestPayout(pts, payoutTitleInput, selectedMethod, payoutHandleInput)
+            val pts = payoutPointsInput.toLongOrNull()
+            when {
+              pts == null || pts < 100L -> payoutError = "Minimum payout is 100 PTS."
+              pts > uiState.wallet.availablePoints -> payoutError = "Insufficient balance (${uiState.wallet.availablePoints} PTS available)."
+              payoutTitleInput.trim().isEmpty() -> payoutError = "Enter a payout label."
+              payoutHandleInput.trim().length < 2 -> payoutError = "Enter a destination email or account handle."
+              else -> {
+                payoutError = null
+                showPayoutDialog = false
+                onRequestPayout(pts, payoutTitleInput.trim(), selectedMethod, payoutHandleInput.trim())
+              }
+            }
           },
+          modifier = Modifier.testTag("payout_dialog_submit_button"),
         ) {
           Text("Submit Request")
         }
       },
       dismissButton = {
-        AnimatedTextButton(onClick = { showPayoutDialog = false }) { Text("Cancel") }
+        AnimatedTextButton(
+          onClick = {
+            payoutError = null
+            showPayoutDialog = false
+          },
+        ) { Text("Cancel") }
       },
     )
   }
@@ -813,12 +937,15 @@ private fun RewardTierProgressGauge(
 @Composable
 private fun TransactionRowCard(tx: RewardTransaction, onClick: () -> Unit) {
   val status = TransactionStatus.fromString(tx.status)
-  val isCredit = tx.transactionType == "RECEIPT_REWARD" || tx.transactionType == "CAMPAIGN_BONUS"
+  val isCredit = tx.transactionType == "RECEIPT_REWARD" ||
+    tx.transactionType == "CAMPAIGN_BONUS" ||
+    tx.idempotencyKey.startsWith("payrev_")
   Surface(
     modifier = Modifier
       .fillMaxWidth()
       .clip(RoundedCornerShape(12.dp))
-      .clickable(onClick = onClick),
+      .clickable(onClick = onClick)
+      .testTag("tx_row_${tx.id}"),
     shape = RoundedCornerShape(12.dp),
     color = MaterialTheme.colorScheme.surface,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -869,7 +996,8 @@ fun ReceiptSubmissionScreen(
   var transactionDate by remember { mutableStateOf(todayStr) }
   var totalAmountText by remember { mutableStateOf("") }
   var receiptReference by remember { mutableStateOf("") }
-  var selectedCampaignId by remember { mutableStateOf(preselectedCampaignId) }
+  var selectedCampaignId by remember(preselectedCampaignId) { mutableStateOf(preselectedCampaignId) }
+  var formError by remember { mutableStateOf<String?>(null) }
 
   Box(
     modifier = Modifier
@@ -929,27 +1057,39 @@ fun ReceiptSubmissionScreen(
           Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
               value = storeName,
-              onValueChange = { storeName = it },
+              onValueChange = {
+                storeName = it
+                formError = null
+              },
               label = { Text("Store Name *") },
               placeholder = { Text("e.g., FreshMart Downtown") },
               modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
               value = transactionDate,
-              onValueChange = { transactionDate = it },
+              onValueChange = {
+                transactionDate = it
+                formError = null
+              },
               label = { Text("Transaction Date (YYYY-MM-DD) *") },
               modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
               value = totalAmountText,
-              onValueChange = { totalAmountText = it },
+              onValueChange = {
+                totalAmountText = it
+                formError = null
+              },
               label = { Text("Receipt Total (${market.currencyCode}) *") },
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
               modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
               value = receiptReference,
-              onValueChange = { receiptReference = it },
+              onValueChange = {
+                receiptReference = it
+                formError = null
+              },
               label = { Text("Receipt / Invoice Reference *") },
               placeholder = { Text("e.g., INV-88421") },
               modifier = Modifier.fillMaxWidth(),
@@ -987,20 +1127,38 @@ fun ReceiptSubmissionScreen(
               }
             }
 
+            formError?.let { err ->
+              Text(
+                text = err,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+              )
+            }
+
             AnimatedButton(
               onClick = {
                 if (!isSignedIn) {
                   onSignInRequested()
                 } else {
-                  onSubmitReceipt(
-                    storeName,
-                    transactionDate,
-                    market.currencyCode,
-                    totalAmountText.toDoubleOrNull() ?: 0.0,
-                    receiptReference,
-                    selectedCampaignId,
-                    onBack,
-                  )
+                  val parsedTotal = totalAmountText.toDoubleOrNull()
+                  when {
+                    storeName.trim().isEmpty() -> formError = "Enter the store or merchant name."
+                    transactionDate.trim().length < 8 -> formError = "Enter a valid transaction date (YYYY-MM-DD)."
+                    parsedTotal == null || parsedTotal <= 0.0 -> formError = "Enter a receipt total greater than 0."
+                    receiptReference.trim().isEmpty() -> formError = "Enter the receipt or invoice reference."
+                    else -> {
+                      formError = null
+                      onSubmitReceipt(
+                        storeName.trim(),
+                        transactionDate.trim(),
+                        market.currencyCode,
+                        parsedTotal,
+                        receiptReference.trim(),
+                        selectedCampaignId,
+                        onBack,
+                      )
+                    }
+                  }
                 }
               },
               modifier = Modifier

@@ -4,6 +4,7 @@ package com.example
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -111,6 +112,7 @@ import com.example.ui.theme.Scan2MoneyTheme
 import com.example.ui.viewmodel.MainAppViewModel
 import com.example.ui.viewmodel.ProductDetailViewModel
 import com.example.ui.viewmodel.ScannerViewModel
+import com.google.android.gms.ads.MobileAds
 
 class MainActivity : ComponentActivity() {
   private val appContainer: AppContainer by lazy(LazyThreadSafetyMode.NONE) {
@@ -120,6 +122,9 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    if (!Build.FINGERPRINT.contains("robolectric", ignoreCase = true)) {
+      runCatching { MobileAds.initialize(this) {} }
+    }
     setContent {
       Scan2MoneyRoot(appContainer)
     }
@@ -629,6 +634,8 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                             onUpdateCampaignStatus = { camp, status -> mainViewModel.updateCampaignStatus(camp, status) },
                             onVerifyProduct = { product -> mainViewModel.verifyCatalogProduct(product) },
                             onCompleteDeletion = { req -> mainViewModel.completeDeletionRequest(req) },
+                            onLoadUserWalletLedger = { uid -> mainViewModel.fetchUserLedgerForAdmin(uid) },
+                            onReverseTransaction = { tx, reason -> mainViewModel.reverseTransaction(tx, reason) },
                           )
                         }
                       }

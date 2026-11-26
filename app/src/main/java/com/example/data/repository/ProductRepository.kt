@@ -4,6 +4,7 @@ import com.example.data.local.CachedProductDao
 import com.example.data.local.CachedProductEntity
 import com.example.data.model.CatalogProduct
 import com.example.data.model.OfferAvailability
+import com.example.data.model.PriceHistoryEntry
 import com.example.data.model.ProductOffer
 import com.example.data.model.VerificationStatus
 import com.example.data.remote.OpenFoodFactsApi
@@ -25,6 +26,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.roundToLong
 
 data class ProductApiMetadata(
   val quantity: String = "",
@@ -296,6 +301,111 @@ class ProductRepository(
     )
   }
 
+  fun observePriceHistory(barcode: String): Flow<List<PriceHistoryEntry>> = callbackFlow {
+    if (auth.currentUser == null || !isSafeId(barcode)) {
+      trySend(emptyList())
+      close()
+      return@callbackFlow
+    }
+    val reg = db.collection("products_catalog").document(barcode)
+      .collection("price_history")
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          android.util.Log.w("ProductRepository", "observePriceHistory error: ${error.message}")
+          trySend(emptyList())
+          return@addSnapshotListener
+        }
+        val items = snap?.documents?.mapNotNull { doc ->
+          doc.toObject(PriceHistoryEntry::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+        }?.sortedByDescending { it.recordedAt?.seconds ?: 0L } ?: emptyList()
+        trySend(items)
+      }
+    awaitClose { reg.remove() }
+  }
+
+  suspend fun syncScannedProductToFirestore(product: CatalogProduct) = withContext(Dispatchers.IO) {
+    val uid = auth.currentUser?.uid ?: return@withContext
+    val cleanBarcode = product.barcode.trim()
+    if (!isSafeId(cleanBarcode) || product.name.isBlank()) return@withContext
+    val docRef = db.collection("products_catalog").document(cleanBarcode)
+    runCatching {
+      if (!docRef.get().await().exists()) {
+        val status = if (product.verificationStatus == VerificationStatus.USER_SUBMITTED_UNVERIFIED.name) {
+          VerificationStatus.USER_SUBMITTED_UNVERIFIED.name
+        } else {
+          VerificationStatus.OPEN_FOOD_FACTS.name
+        }
+        docRef.set(
+          hashMapOf(
+            "barcode" to cleanBarcode.take(64),
+            "name" to product.name.trim().take(160),
+            "brand" to product.brand.trim().take(100),
+            "category" to product.category.trim().take(80),
+            "description" to product.description.trim().take(600),
+            "imageUrl" to product.imageUrl.trim().take(500),
+            "manufacturer" to product.manufacturer.trim().take(120),
+            "countryOfOrigin" to product.countryOfOrigin.trim().take(80),
+            "dataProvider" to product.dataProvider.trim().ifEmpty { "Open Food Facts" }.take(100),
+            "attributionText" to product.attributionText.trim().ifEmpty { "Data © Open Food Facts contributors (ODbL)" }.take(240),
+            "verificationStatus" to status,
+            "submittedBy" to uid.take(128),
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        ).await()
+      }
+    }
+  }
+
+  suspend fun recordObservedPriceHistory(
+    barcode: String,
+    countryCode: String,
+    offers: List<ComparedOffer>,
+  ) = withContext(Dispatchers.IO) {
+    val uid = auth.currentUser?.uid ?: return@withContext
+    val cleanBarcode = barcode.trim()
+    if (!isSafeId(cleanBarcode)) return@withContext
+
+    // Record genuine external / store observations (never pollute Firestore history with simulated placeholders)
+    val candidates = offers
+      .filter { !it.isSimulated && it.price > 0.0 && it.storeName.isNotBlank() }
+      .take(4)
+    if (candidates.isEmpty()) return@withContext
+
+    val dayStamp = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+    val historyCollection = db.collection("products_catalog").document(cleanBarcode).collection("price_history")
+    runCatching {
+      val existingIds = historyCollection.get().await().documents.map { it.id }.toSet()
+      val batch = db.batch()
+      var pendingWrites = 0
+      candidates.forEach { offer ->
+        val storeSlug = offer.storeName.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_').take(24).ifEmpty { "store" }
+        val priceCents = (offer.price * 100.0).roundToLong().coerceAtLeast(1L)
+        val entryId = "ph_${dayStamp}_${storeSlug}_$priceCents".take(120)
+        if (entryId !in existingIds && isSafeId(entryId)) {
+          batch.set(
+            historyCollection.document(entryId),
+            hashMapOf(
+              "barcode" to cleanBarcode.take(64),
+              "storeName" to offer.storeName.trim().take(100),
+              "price" to offer.price,
+              "currencyCode" to offer.currencyCode.trim().uppercase().take(3).ifEmpty { "USD" },
+              "countryCode" to countryCode.trim().uppercase().take(6).ifEmpty { "US" },
+              "sourceProvider" to offer.sourceLabel.trim().ifEmpty { "Price Observation" }.take(80),
+              "verified" to false,
+              "recordedBy" to uid.take(128),
+              "recordedAt" to FieldValue.serverTimestamp(),
+            ),
+          )
+          pendingWrites++
+        }
+      }
+      if (pendingWrites > 0) {
+        batch.commit().await()
+      }
+    }
+  }
+
   fun observeOffersForProduct(barcode: String, countryCode: String): Flow<List<ProductOffer>> = callbackFlow {
     if (auth.currentUser == null || !isSafeId(barcode)) {
       trySend(emptyList())
@@ -531,22 +641,39 @@ class ProductRepository(
     require(price > 0.0 && price <= 1_000_000.0) { "Price must be greater than zero." }
 
     val path = "products_catalog/$cleanBarcode/offers"
+    val cleanStore = storeName.trim().take(100)
+    val cleanCurrency = currencyCode.trim().uppercase().take(3)
+    val cleanCountry = countryCode.trim().uppercase().take(2)
     val payload = hashMapOf<String, Any>(
       "barcode" to cleanBarcode.take(64),
-      "storeName" to storeName.trim().take(100),
+      "storeName" to cleanStore,
       "price" to price,
-      "currencyCode" to currencyCode.trim().uppercase().take(3),
-      "countryCode" to countryCode.trim().uppercase().take(2),
+      "currencyCode" to cleanCurrency,
+      "countryCode" to cleanCountry,
       "availabilityStatus" to OfferAvailability.UNVERIFIED.name,
       "verified" to false,
       "offerUrl" to offerUrl.trim().take(500),
       "submittedBy" to uid.take(128),
       "lastVerifiedAt" to FieldValue.serverTimestamp(),
     )
+    val historyPayload = hashMapOf<String, Any>(
+      "barcode" to cleanBarcode.take(64),
+      "storeName" to cleanStore,
+      "price" to price,
+      "currencyCode" to cleanCurrency,
+      "countryCode" to cleanCountry,
+      "sourceProvider" to "Community Price Report",
+      "verified" to false,
+      "recordedBy" to uid.take(128),
+      "recordedAt" to FieldValue.serverTimestamp(),
+    )
 
     try {
-      db.collection("products_catalog").document(cleanBarcode)
-        .collection("offers").document().set(payload).await()
+      val productDoc = db.collection("products_catalog").document(cleanBarcode)
+      val batch = db.batch()
+      batch.set(productDoc.collection("offers").document(), payload)
+      batch.set(productDoc.collection("price_history").document(), historyPayload)
+      batch.commit().await()
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.CatalogProduct
+import com.example.data.model.PriceHistoryEntry
 import com.example.data.model.ProductOffer
 import com.example.data.repository.ComparedOffer
 import com.example.data.repository.ProductApiMetadata
@@ -24,6 +25,7 @@ data class ProductDetailUiState(
   val fromOfflineCache: Boolean = false,
   val networkError: String? = null,
   val offers: List<ProductOffer> = emptyList(),
+  val priceHistory: List<PriceHistoryEntry> = emptyList(),
   val isComparingOffers: Boolean = false,
   val hasComparedOffers: Boolean = false,
   val comparedOffers: List<ComparedOffer> = emptyList(),
@@ -37,6 +39,7 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
   val uiState: StateFlow<ProductDetailUiState> = _uiState.asStateFlow()
 
   private var offersJob: Job? = null
+  private var priceHistoryJob: Job? = null
 
   fun load(barcode: String, countryCode: String) {
     val clean = barcode.trim()
@@ -48,6 +51,7 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
         is ProductLookupOutcome.Found -> {
           resolvedName = outcome.product.name
           resolvedBrand = outcome.product.brand
+          launch { runCatching { container.productRepository.syncScannedProductToFirestore(outcome.product) } }
           _uiState.value = _uiState.value.copy(
             isLoading = false,
             product = outcome.product,
@@ -76,6 +80,15 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
         .catch { emit(emptyList()) }
         .collect { offers ->
           _uiState.value = _uiState.value.copy(offers = offers)
+        }
+    }
+
+    priceHistoryJob?.cancel()
+    priceHistoryJob = viewModelScope.launch {
+      container.productRepository.observePriceHistory(clean)
+        .catch { emit(emptyList()) }
+        .collect { history ->
+          _uiState.value = _uiState.value.copy(priceHistory = history)
         }
     }
   }
@@ -114,6 +127,11 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
         includesSimulatedRetailers = result.includesSimulatedRetailers,
         compareNotice = result.apiNotice,
       )
+      launch {
+        runCatching {
+          container.productRepository.recordObservedPriceHistory(clean, countryCode, result.offers)
+        }
+      }
     }
   }
 

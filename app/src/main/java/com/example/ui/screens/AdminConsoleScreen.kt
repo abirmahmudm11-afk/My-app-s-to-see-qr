@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -33,7 +34,10 @@ import androidx.compose.material.icons.rounded.Paid
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Undo
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,10 +56,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.R
 import com.example.data.model.Campaign
 import com.example.data.model.CampaignStatus
 import com.example.data.model.CatalogProduct
@@ -64,6 +72,10 @@ import com.example.data.model.PayoutRequest
 import com.example.data.model.PayoutStatus
 import com.example.data.model.ReceiptReviewStatus
 import com.example.data.model.ReceiptSubmission
+import com.example.data.model.RewardTransaction
+import com.example.data.model.RewardWallet
+import com.example.data.model.TransactionStatus
+import com.example.data.model.TransactionType
 import com.example.data.model.UserProfile
 import com.example.domain.MarketConfig
 import com.example.ui.components.AnimatedButton
@@ -95,20 +107,47 @@ fun AdminConsoleScreen(
   onUpdateCampaignStatus: (Campaign, CampaignStatus) -> Unit,
   onVerifyProduct: (CatalogProduct) -> Unit,
   onCompleteDeletion: (DeletionRequest) -> Unit,
+  onLoadUserWalletLedger: suspend (String) -> Pair<RewardWallet, List<RewardTransaction>> = { uid -> RewardWallet(userId = uid) to emptyList() },
+  onReverseTransaction: (RewardTransaction, String) -> Unit = { _, _ -> },
 ) {
   BackHandler(onBack = onBack)
+
+  val context = LocalContext.current
+  val firebaseProjectId = remember(context) { context.getString(R.string.project_id) }
+  val firestoreDbId = remember(context) { context.getString(R.string.firestore_database_id) }
+  val admobAppId = remember(context) { context.getString(R.string.admob_app_id) }
+  val admobBannerId = remember(context) { context.getString(R.string.admob_banner_unit_id) }
 
   var selectedTab by remember { mutableIntStateOf(0) }
   var userSearch by remember { mutableStateOf("") }
   var bonusTargetUser by remember { mutableStateOf<UserProfile?>(null) }
   var bonusPointsInput by remember { mutableStateOf("100") }
   var bonusReasonInput by remember { mutableStateOf("Admin loyalty bonus") }
+  var bonusError by remember { mutableStateOf<String?>(null) }
+
+  var inspectWalletUser by remember { mutableStateOf<UserProfile?>(null) }
+  var inspectWalletLoading by remember { mutableStateOf(false) }
+  var inspectWalletData by remember { mutableStateOf<Pair<RewardWallet, List<RewardTransaction>>?>(null) }
+  var reversalReasonInput by remember { mutableStateOf("Admin audit adjustment") }
 
   var partnerName by remember { mutableStateOf("") }
   var campaignTitle by remember { mutableStateOf("") }
   var campaignTerms by remember { mutableStateOf("") }
   var campaignPts by remember { mutableStateOf("150") }
   var campaignCountry by remember { mutableStateOf("US") }
+  var campaignError by remember { mutableStateOf<String?>(null) }
+
+  LaunchedEffect(inspectWalletUser?.userId) {
+    val target = inspectWalletUser
+    if (target != null) {
+      inspectWalletLoading = true
+      inspectWalletData = runCatching { onLoadUserWalletLedger(target.userId) }
+        .getOrElse { RewardWallet(userId = target.userId) to emptyList() }
+      inspectWalletLoading = false
+    } else {
+      inspectWalletData = null
+    }
+  }
 
   val pendingPayoutsCount = uiState.allPayoutRequests.count {
     it.status == PayoutStatus.PENDING.name || it.status == PayoutStatus.APPROVED.name
@@ -133,20 +172,22 @@ fun AdminConsoleScreen(
         Column(modifier = Modifier.weight(1f)) {
           Text("Admin Console", style = MaterialTheme.typography.titleLarge, color = Color.White)
           Text(
-            text = "Role: ${uiState.adminRole?.roleName ?: "UNAUTHORIZED"}",
+            text = "Role: ${uiState.adminRole?.roleName ?: "UNAUTHORIZED"} · ${uiState.firebaseUser?.email ?: "Guest"}",
             style = MaterialTheme.typography.bodySmall,
             color = LedgerJadeDark,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
         }
       }
 
       if (uiState.adminRole != null) {
         val tabs = listOf(
-          "Overview",
-          "Users (${uiState.allUsers.size})",
-          "Payouts ($pendingPayoutsCount)",
-          "Receipts (${uiState.pendingReceipts.size})",
-          "More",
+          "overview" to "Overview",
+          "users" to "Users (${uiState.allUsers.size})",
+          "payouts" to "Payouts ($pendingPayoutsCount)",
+          "receipts" to "Receipts (${uiState.pendingReceipts.size})",
+          "more" to "More",
         )
         Row(
           modifier = Modifier
@@ -154,12 +195,13 @@ fun AdminConsoleScreen(
             .horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          tabs.forEachIndexed { idx, label ->
+          tabs.forEachIndexed { idx, (slug, label) ->
             val selected = selectedTab == idx
             Surface(
               modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .bounceClickable { selectedTab = idx },
+                .bounceClickable { selectedTab = idx }
+                .testTag("admin_tab_$slug"),
               color = if (selected) SignalIndigo else Color.White.copy(alpha = 0.10f),
               shape = RoundedCornerShape(8.dp),
             ) {
@@ -219,6 +261,36 @@ fun AdminConsoleScreen(
                   }
                 }
               }
+              item {
+                Surface(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_project_config_card"),
+                  shape = RoundedCornerShape(12.dp),
+                  color = MaterialTheme.colorScheme.surface,
+                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                  Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      Icon(Icons.Rounded.VerifiedUser, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                      Text("Firebase Project & AdMob Config", style = MaterialTheme.typography.titleMedium)
+                    }
+                    Text("Firebase Project ID: $firebaseProjectId", style = TabularDataStyle)
+                    Text(
+                      text = "Firestore DB ID: $firestoreDbId",
+                      style = TabularDataStyle,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                      text = "Super Admins: abirmahmudm11@gmail.com (verified Google Sign-In)",
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.secondary,
+                    )
+                    Text("AdMob App ID: $admobAppId", style = TabularDataStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("AdMob Banner Unit: $admobBannerId", style = TabularDataStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                }
+              }
               item { SectionHeader("Recent Payout Activity") }
               if (uiState.allPayoutRequests.isEmpty()) {
                 item { Text("No payout requests logged yet.", style = MaterialTheme.typography.bodySmall) }
@@ -259,7 +331,11 @@ fun AdminConsoleScreen(
                       val next = if (user.accountStatus == "SUSPENDED") "ACTIVE" else "SUSPENDED"
                       onUpdateUserStatus(user.userId, next, "Admin toggled status to $next")
                     },
-                    onCreditBonus = { bonusTargetUser = user },
+                    onCreditBonus = {
+                      bonusError = null
+                      bonusTargetUser = user
+                    },
+                    onInspectWallet = { inspectWalletUser = user },
                   )
                 }
               }
@@ -461,49 +537,83 @@ fun AdminConsoleScreen(
                   Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                       value = partnerName,
-                      onValueChange = { partnerName = it },
+                      onValueChange = {
+                        partnerName = it
+                        campaignError = null
+                      },
                       label = { Text("Partner Brand") },
                       modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                       value = campaignTitle,
-                      onValueChange = { campaignTitle = it },
+                      onValueChange = {
+                        campaignTitle = it
+                        campaignError = null
+                      },
                       label = { Text("Campaign Title") },
                       modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                       value = campaignTerms,
-                      onValueChange = { campaignTerms = it },
+                      onValueChange = {
+                        campaignTerms = it
+                        campaignError = null
+                      },
                       label = { Text("Eligibility Terms") },
                       modifier = Modifier.fillMaxWidth(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                       OutlinedTextField(
                         value = campaignPts,
-                        onValueChange = { campaignPts = it },
+                        onValueChange = {
+                          campaignPts = it
+                          campaignError = null
+                        },
                         label = { Text("Reward PTS") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                       )
                       OutlinedTextField(
                         value = campaignCountry,
-                        onValueChange = { campaignCountry = it },
+                        onValueChange = {
+                          campaignCountry = it
+                          campaignError = null
+                        },
                         label = { Text("Country (US, GLOBAL)") },
                         modifier = Modifier.weight(1f),
                       )
                     }
+                    campaignError?.let { err ->
+                      Text(
+                        text = err,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                      )
+                    }
                     AnimatedButton(
                       onClick = {
-                        onCreateCampaign(
-                          partnerName,
-                          campaignTitle,
-                          campaignTerms,
-                          campaignPts.toLongOrNull() ?: 100L,
-                          campaignCountry.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() },
-                        )
-                        partnerName = ""
-                        campaignTitle = ""
-                        campaignTerms = ""
+                        val pts = campaignPts.toLongOrNull()
+                        val countries = campaignCountry.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+                        when {
+                          partnerName.trim().isEmpty() -> campaignError = "Enter a partner brand name."
+                          campaignTitle.trim().isEmpty() -> campaignError = "Enter a campaign title."
+                          campaignTerms.trim().isEmpty() -> campaignError = "Enter eligibility terms."
+                          pts == null || pts !in 1L..10_000L -> campaignError = "Reward PTS must be between 1 and 10,000."
+                          countries.isEmpty() -> campaignError = "Enter at least one country code (e.g. US or GLOBAL)."
+                          else -> {
+                            campaignError = null
+                            onCreateCampaign(
+                              partnerName,
+                              campaignTitle,
+                              campaignTerms,
+                              pts,
+                              countries,
+                            )
+                            partnerName = ""
+                            campaignTitle = ""
+                            campaignTerms = ""
+                          }
+                        }
                       },
                       modifier = Modifier.fillMaxWidth(),
                       shape = RoundedCornerShape(10.dp),
@@ -527,29 +637,47 @@ fun AdminConsoleScreen(
 
   bonusTargetUser?.let { target ->
     AlertDialog(
-      onDismissRequest = { bonusTargetUser = null },
+      onDismissRequest = {
+        bonusError = null
+        bonusTargetUser = null
+      },
       title = { Text("Credit Bonus to ${target.displayName}") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedTextField(
             value = bonusPointsInput,
-            onValueChange = { bonusPointsInput = it },
-            label = { Text("Bonus PTS") },
+            onValueChange = {
+              bonusPointsInput = it
+              bonusError = null
+            },
+            label = { Text("Bonus PTS (1..50,000)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = bonusError != null,
             modifier = Modifier.fillMaxWidth(),
           )
           OutlinedTextField(
             value = bonusReasonInput,
-            onValueChange = { bonusReasonInput = it },
+            onValueChange = {
+              bonusReasonInput = it
+              bonusError = null
+            },
             label = { Text("Audit Reason") },
             modifier = Modifier.fillMaxWidth(),
           )
+          bonusError?.let { err ->
+            Text(err, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+          }
         }
       },
       confirmButton = {
         AnimatedButton(
           onClick = {
-            val pts = bonusPointsInput.toLongOrNull() ?: 100L
+            val pts = bonusPointsInput.toLongOrNull()
+            if (pts == null || pts !in 1L..50_000L) {
+              bonusError = "Bonus points must be between 1 and 50,000."
+              return@AnimatedButton
+            }
+            bonusError = null
             bonusTargetUser = null
             onCreditBonusPoints(target.userId, pts, bonusReasonInput)
           },
@@ -558,7 +686,86 @@ fun AdminConsoleScreen(
         }
       },
       dismissButton = {
-        AnimatedTextButton(onClick = { bonusTargetUser = null }) { Text("Cancel") }
+        AnimatedTextButton(
+          onClick = {
+            bonusError = null
+            bonusTargetUser = null
+          },
+        ) { Text("Cancel") }
+      },
+    )
+  }
+
+  inspectWalletUser?.let { target ->
+    AlertDialog(
+      onDismissRequest = { inspectWalletUser = null },
+      title = { Text("${target.displayName} Wallet") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          if (inspectWalletLoading) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+              horizontalArrangement = Arrangement.Center,
+            ) {
+              CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+          } else {
+            val (wallet, txs) = inspectWalletData ?: (RewardWallet(userId = target.userId) to emptyList())
+            Text(
+              text = "Available: ${wallet.availablePoints} PTS · Redeemed: ${wallet.redeemedPoints} PTS · Reversed: ${wallet.reversedPoints} PTS",
+              style = TabularDataStyle,
+            )
+            OutlinedTextField(
+              value = reversalReasonInput,
+              onValueChange = { reversalReasonInput = it },
+              label = { Text("Reversal audit reason") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            if (txs.isEmpty()) {
+              Text("No transactions recorded for this user.", style = MaterialTheme.typography.bodySmall)
+            } else {
+              txs.take(6).forEach { tx ->
+                val canReverse = tx.transactionType != TransactionType.REVERSAL.name &&
+                  tx.status != TransactionStatus.REVERSED.name
+                Surface(
+                  shape = RoundedCornerShape(8.dp),
+                  color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                  Row(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                      Text(tx.sourceActivity, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      Text("${tx.amount} PTS · ${tx.status}", style = TabularDataStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (canReverse) {
+                      AnimatedTextButton(
+                        onClick = {
+                          onReverseTransaction(tx, reversalReasonInput)
+                          inspectWalletUser = null
+                        },
+                      ) {
+                        Icon(Icons.Rounded.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Reverse", color = MaterialTheme.colorScheme.error)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        AnimatedTextButton(onClick = { inspectWalletUser = null }) { Text("Close") }
       },
     )
   }
@@ -601,6 +808,7 @@ private fun AdminUserCard(
   user: UserProfile,
   onToggleSuspend: () -> Unit,
   onCreditBonus: () -> Unit,
+  onInspectWallet: () -> Unit,
 ) {
   val isSuspended = user.accountStatus == "SUSPENDED"
   Surface(
@@ -634,23 +842,36 @@ private fun AdminUserCard(
           )
         }
       }
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         AnimatedOutlinedButton(
           onClick = onCreditBonus,
           modifier = Modifier.weight(1f),
           shape = RoundedCornerShape(8.dp),
+          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
         ) {
-          Icon(Icons.Rounded.AddCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+          Icon(Icons.Rounded.AddCircle, contentDescription = null, modifier = Modifier.size(15.dp))
           Spacer(Modifier.width(4.dp))
-          Text("Credit PTS")
+          Text("Credit", style = MaterialTheme.typography.labelMedium)
+        }
+        AnimatedOutlinedButton(
+          onClick = onInspectWallet,
+          modifier = Modifier.weight(1f),
+          shape = RoundedCornerShape(8.dp),
+          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        ) {
+          Icon(Icons.Rounded.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(15.dp))
+          Spacer(Modifier.width(4.dp))
+          Text("Ledger", style = MaterialTheme.typography.labelMedium)
         }
         AnimatedOutlinedButton(
           onClick = onToggleSuspend,
           modifier = Modifier.weight(1f),
           shape = RoundedCornerShape(8.dp),
+          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
         ) {
           Text(
             text = if (isSuspended) "Reactivate" else "Suspend",
+            style = MaterialTheme.typography.labelMedium,
             color = if (isSuspended) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
           )
         }
@@ -664,7 +885,7 @@ private fun AdminPayoutCard(
   request: PayoutRequest,
   onReview: (PayoutRequest, PayoutStatus, String) -> Unit,
 ) {
-  var noteInput by remember { mutableStateOf(request.adminNotes.orEmpty()) }
+  var noteInput by remember(request.id) { mutableStateOf(request.adminNotes.orEmpty()) }
   val status = PayoutStatus.fromString(request.status)
   val (bg, fg) = when (status) {
     PayoutStatus.PAID, PayoutStatus.APPROVED -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.secondary
@@ -749,8 +970,9 @@ private fun PendingReceiptAdminCard(
   onApprove: (Long) -> Unit,
   onReject: (String) -> Unit,
 ) {
-  var pointsText by remember { mutableStateOf("100") }
-  var rejectReason by remember { mutableStateOf("") }
+  var pointsText by remember(receipt.id) { mutableStateOf("100") }
+  var rejectReason by remember(receipt.id) { mutableStateOf("") }
+  var approveError by remember(receipt.id) { mutableStateOf<String?>(null) }
 
   Surface(
     shape = RoundedCornerShape(12.dp),
@@ -766,8 +988,12 @@ private fun PendingReceiptAdminCard(
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
           value = pointsText,
-          onValueChange = { pointsText = it },
+          onValueChange = {
+            pointsText = it
+            approveError = null
+          },
           label = { Text("PTS") },
+          isError = approveError != null,
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           modifier = Modifier.weight(1f),
         )
@@ -777,6 +1003,9 @@ private fun PendingReceiptAdminCard(
           label = { Text("Reject note") },
           modifier = Modifier.weight(1.5f),
         )
+      }
+      approveError?.let { err ->
+        Text(err, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
       }
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         AnimatedOutlinedButton(
@@ -789,7 +1018,15 @@ private fun PendingReceiptAdminCard(
           Text("Reject", color = MaterialTheme.colorScheme.error)
         }
         AnimatedButton(
-          onClick = { onApprove(pointsText.toLongOrNull() ?: 100L) },
+          onClick = {
+            val pts = pointsText.toLongOrNull()
+            if (pts == null || pts !in 1L..10_000L) {
+              approveError = "Reward PTS must be 1..10,000."
+            } else {
+              approveError = null
+              onApprove(pts)
+            }
+          },
           modifier = Modifier.weight(1f),
           shape = RoundedCornerShape(8.dp),
         ) {

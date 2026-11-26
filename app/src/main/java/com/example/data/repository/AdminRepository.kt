@@ -33,11 +33,15 @@ class AdminRepository(
   private val db: FirebaseFirestore,
   private val auth: FirebaseAuth,
 ) {
-  private val adminEmails = setOf("altabmahmud172@gmail.com", "m28044963@gmail.com")
+  private val adminEmails = setOf(
+    "abirmahmudm11@gmail.com",
+    "altabmahmud172@gmail.com",
+    "m28044963@gmail.com",
+  )
 
   suspend fun resolveAdminRole(): AdminRole? {
     val user = auth.currentUser ?: return null
-    val email = user.email?.lowercase().orEmpty()
+    val email = user.email?.trim()?.lowercase().orEmpty()
     if (user.isEmailVerified && email in adminEmails) {
       return AdminRole(
         id = user.uid,
@@ -56,7 +60,10 @@ class AdminRepository(
 
   fun observeAllUsers(): Flow<List<UserProfile>> = callbackFlow {
     val reg = db.collection("users").addSnapshotListener { snap, error ->
-      if (error != null) return@addSnapshotListener
+      if (error != null) {
+        android.util.Log.w("AdminRepository", "observeAllUsers error: ${error.message}")
+        return@addSnapshotListener
+      }
       val items = snap?.documents?.mapNotNull { it.toObject(UserProfile::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.createdAt?.seconds ?: 0L } ?: emptyList()
       trySend(items)
@@ -147,6 +154,21 @@ class AdminRepository(
     }
   }
 
+  suspend fun fetchUserTransactions(userId: String): List<RewardTransaction> {
+    return try {
+      db.collection("users").document(userId).collection("transactions")
+        .get()
+        .await()
+        .documents
+        .mapNotNull { doc ->
+          doc.toObject(RewardTransaction::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+        }
+        .sortedByDescending { it.createdAt?.seconds ?: 0L }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
   suspend fun reviewPayoutRequest(
     request: PayoutRequest,
     newStatus: PayoutStatus,
@@ -183,14 +205,29 @@ class AdminRepository(
       if (newStatus == PayoutStatus.REJECTED) {
         val walletSnap = walletRef.get().await()
         val wallet = walletSnap.toObject(RewardWallet::class.java) ?: RewardWallet(userId = request.userId)
-        batch.update(
-          walletRef,
-          mapOf(
-            "availablePoints" to (wallet.availablePoints + request.pointsAmount),
-            "redeemedPoints" to maxOf(0L, wallet.redeemedPoints - request.pointsAmount),
-            "updatedAt" to FieldValue.serverTimestamp(),
-          ),
-        )
+        if (walletSnap.exists()) {
+          batch.update(
+            walletRef,
+            mapOf(
+              "availablePoints" to (wallet.availablePoints + request.pointsAmount),
+              "redeemedPoints" to maxOf(0L, wallet.redeemedPoints - request.pointsAmount),
+              "updatedAt" to FieldValue.serverTimestamp(),
+            ),
+          )
+        } else {
+          batch.set(
+            walletRef,
+            hashMapOf(
+              "userId" to request.userId,
+              "unitCode" to "PTS",
+              "availablePoints" to request.pointsAmount,
+              "pendingPoints" to 0L,
+              "redeemedPoints" to 0L,
+              "reversedPoints" to 0L,
+              "updatedAt" to FieldValue.serverTimestamp(),
+            ),
+          )
+        }
         batch.set(
           userRef.collection("transactions").document(),
           hashMapOf(
@@ -682,19 +719,39 @@ class AdminRepository(
     val cleanReason = reason.trim().ifEmpty { "Administrative ledger reversal" }.take(300)
     val userRef = db.collection("users").document(tx.userId)
     val walletRef = userRef.collection("wallet").document("summary")
+    val reversalRef = userRef.collection("transactions").document("rev_${tx.id}")
     try {
-      val wallet = walletRef.get().await().toObject(RewardWallet::class.java) ?: RewardWallet(userId = tx.userId)
+      if (reversalRef.get().await().exists()) {
+        throw IllegalStateException("This transaction has already been reversed.")
+      }
+      val walletSnap = walletRef.get().await()
+      val wallet = walletSnap.toObject(RewardWallet::class.java) ?: RewardWallet(userId = tx.userId)
       val batch = db.batch()
-      batch.update(
-        walletRef,
-        mapOf(
-          "availablePoints" to maxOf(0L, wallet.availablePoints - tx.amount),
-          "reversedPoints" to (wallet.reversedPoints + tx.amount),
-          "updatedAt" to FieldValue.serverTimestamp(),
-        ),
-      )
+      if (walletSnap.exists()) {
+        batch.update(
+          walletRef,
+          mapOf(
+            "availablePoints" to maxOf(0L, wallet.availablePoints - tx.amount),
+            "reversedPoints" to (wallet.reversedPoints + tx.amount),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+      } else {
+        batch.set(
+          walletRef,
+          hashMapOf(
+            "userId" to tx.userId,
+            "unitCode" to "PTS",
+            "availablePoints" to 0L,
+            "pendingPoints" to 0L,
+            "redeemedPoints" to 0L,
+            "reversedPoints" to tx.amount,
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+      }
       batch.set(
-        userRef.collection("transactions").document(),
+        reversalRef,
         hashMapOf(
           "userId" to tx.userId,
           "transactionType" to TransactionType.REVERSAL.name,
