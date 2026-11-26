@@ -13,9 +13,10 @@ import com.example.data.repository.ProductRepository
 import com.example.data.repository.ReceiptAndCampaignRepository
 import com.example.data.repository.ScanHistoryRepository
 import com.example.data.repository.UserWalletRepository
+import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -28,21 +29,12 @@ import java.util.concurrent.TimeUnit
 class AppContainer(context: Context) {
   private val appContext = context.applicationContext
 
-  val firebaseApp: FirebaseApp = FirebaseApp.getApps(appContext).firstOrNull() ?: run {
-    val options = FirebaseOptions.Builder()
-      .setProjectId(appContext.getString(R.string.firebase_project_id))
-      .setApplicationId(appContext.getString(R.string.firebase_app_id))
-      .setApiKey(appContext.getString(R.string.firebase_api_key))
-      .setStorageBucket(appContext.getString(R.string.firebase_storage_bucket))
-      .setGcmSenderId(appContext.getString(R.string.firebase_messaging_sender_id))
-      .build()
-    FirebaseApp.initializeApp(appContext, options)
-  }
+  val firebaseApp: FirebaseApp? = FirebaseApp.getApps(appContext).firstOrNull()
+    ?: FirebaseApp.initializeApp(appContext)
 
-  val auth: FirebaseAuth = FirebaseAuth.getInstance(firebaseApp)
+  val auth: FirebaseAuth = Firebase.auth
   val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(
-    firebaseApp,
-    appContext.getString(R.string.firebase_database_id),
+    appContext.getString(R.string.firestore_database_id),
   )
 
   val preferencesDataStore = AppPreferencesDataStore(appContext)

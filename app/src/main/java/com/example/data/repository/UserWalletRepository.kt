@@ -200,6 +200,8 @@ class UserWalletRepository(
             "barcodeFormat" to barcodeFormat.take(32),
             "productName" to productName.take(160),
             "brand" to brand.take(100),
+            "category" to category.take(80),
+            "description" to description.take(600),
             "sourceProvider" to sourceProvider.ifEmpty { "None" }.take(80),
             "verificationStatus" to verificationStatus,
             "scanResult" to scanResult,

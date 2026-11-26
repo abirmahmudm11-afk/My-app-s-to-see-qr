@@ -1,10 +1,9 @@
-const {
-  initializeTestEnvironment,
-  assertFails,
-  assertSucceeds,
-} = require("@firebase/rules-unit-testing");
-const { test, before, after, beforeEach } = require("node:test");
-const fs = require("node:fs");
+import { createRequire } from "node:module";
+import { test, before, after, beforeEach } from "node:test";
+import fs from "node:fs";
+
+const require = createRequire(import.meta.url);
+const { initializeTestEnvironment, assertFails, assertSucceeds } = require("@firebase/rules-unit-testing");
 
 let testEnv;
 const PROJECT_ID = process.env.GCP_PROJECT || "demo-no-project";
@@ -471,4 +470,139 @@ test("Admin atomic receipt approval initializes wallet if missing and logs audit
   });
   await assertSucceeds(batch.commit());
 });
+
+test("abirmahmudm11@gmail.com has verified SUPER_ADMIN access and unverified spoof is denied", async () => {
+  const verifiedAdminDb = testEnv.authenticatedContext("abir_uid", {
+    email: "abirmahmudm11@gmail.com",
+    email_verified: true,
+  }).firestore();
+  const spoofAdminDb = testEnv.authenticatedContext("abir_spoof", {
+    email: "abirmahmudm11@gmail.com",
+    email_verified: false,
+  }).firestore();
+  const now = new Date(Date.now() - 1000);
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection("payout_requests").doc("pay_abir_1").set({
+      userId: ALICE_UID,
+      userDisplayName: "Alice",
+      rewardTitle: "Grocery Voucher",
+      pointsAmount: 100,
+      payoutMethod: "GIFT_VOUCHER",
+      destinationHandle: "alice@example.com",
+      status: "PENDING",
+      requestedAt: now,
+      updatedAt: now,
+    });
+  });
+
+  // Unverified spoof cannot read all payout_requests or approve
+  await assertFails(spoofAdminDb.collection("payout_requests").get());
+  await assertFails(
+    spoofAdminDb.collection("payout_requests").doc("pay_abir_1").update({
+      status: "PAID",
+      reviewedBy: "abir_spoof",
+      adminNotes: "Spoof",
+      updatedAt: now,
+    })
+  );
+
+  // Verified abirmahmudm11@gmail.com can read all payouts and mark PAID
+  await assertSucceeds(verifiedAdminDb.collection("payout_requests").get());
+  await assertSucceeds(
+    verifiedAdminDb.collection("payout_requests").doc("pay_abir_1").update({
+      status: "PAID",
+      reviewedBy: "abir_uid",
+      adminNotes: "Paid by Abir",
+      updatedAt: now,
+    })
+  );
+});
+
+test("Scanned product details, ScanRecord description/category, and price_history rules", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const now = new Date(Date.now() - 1000);
+
+  // ScanRecord with description & category succeeds
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("scans").doc("scan_desc_1").set({
+      userId: ALICE_UID,
+      barcodeValue: "3017620422003",
+      barcodeFormat: "EAN_13",
+      productName: "Nutella Hazelnut Spread",
+      brand: "Ferrero",
+      category: "Breakfast Spreads",
+      description: "400 g hazelnut spread with cocoa",
+      sourceProvider: "Open Food Facts",
+      verificationStatus: "OPEN_FOOD_FACTS",
+      scanResult: "MATCHED",
+      scannedAt: now,
+    })
+  );
+
+  // Scanned product snapshot with OPEN_FOOD_FACTS succeeds for authenticated user
+  await assertSucceeds(
+    aliceDb.collection("products_catalog").doc("3017620422003").set({
+      barcode: "3017620422003",
+      name: "Nutella Hazelnut Spread",
+      brand: "Ferrero",
+      category: "Breakfast Spreads",
+      description: "400 g jar",
+      imageUrl: "https://example.com/nutella.jpg",
+      manufacturer: "Ferrero",
+      countryOfOrigin: "Italy",
+      dataProvider: "Open Food Facts",
+      attributionText: "Data © Open Food Facts contributors (ODbL)",
+      verificationStatus: "OPEN_FOOD_FACTS",
+      submittedBy: ALICE_UID,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Valid unverified price_history entry succeeds
+  await assertSucceeds(
+    aliceDb.collection("products_catalog").doc("3017620422003").collection("price_history").doc("ph_1").set({
+      barcode: "3017620422003",
+      storeName: "FreshMart",
+      price: 4.49,
+      currencyCode: "USD",
+      countryCode: "US",
+      sourceProvider: "Community Report",
+      verified: false,
+      recordedBy: ALICE_UID,
+      recordedAt: now,
+    })
+  );
+
+  // Negative/zero price or impersonation fails
+  await assertFails(
+    aliceDb.collection("products_catalog").doc("3017620422003").collection("price_history").doc("ph_bad_price").set({
+      barcode: "3017620422003",
+      storeName: "FreshMart",
+      price: 0,
+      currencyCode: "USD",
+      countryCode: "US",
+      sourceProvider: "Community Report",
+      verified: false,
+      recordedBy: ALICE_UID,
+      recordedAt: now,
+    })
+  );
+  await assertFails(
+    aliceDb.collection("products_catalog").doc("3017620422003").collection("price_history").doc("ph_bad_user").set({
+      barcode: "3017620422003",
+      storeName: "FreshMart",
+      price: 3.99,
+      currencyCode: "USD",
+      countryCode: "US",
+      sourceProvider: "Community Report",
+      verified: true,
+      recordedBy: BOB_UID,
+      recordedAt: now,
+    })
+  );
+});
+
 

@@ -2,6 +2,7 @@ package com.example.data.model
 
 import androidx.annotation.Keep
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 
 enum class VerificationStatus(val label: String) {
@@ -243,7 +244,7 @@ data class CatalogProduct(
 @Keep
 @IgnoreExtraProperties
 data class ProductOffer(
-  val id: String = "",
+  @DocumentId val id: String = "",
   val barcode: String = "",
   val storeName: String = "",
   val price: Double = 0.0,
@@ -254,6 +255,21 @@ data class ProductOffer(
   val offerUrl: String = "",
   val submittedBy: String = "",
   val lastVerifiedAt: Timestamp? = null,
+)
+
+@Keep
+@IgnoreExtraProperties
+data class PriceHistoryEntry(
+  @DocumentId val id: String = "",
+  val barcode: String = "",
+  val storeName: String = "",
+  val price: Double = 0.0,
+  val currencyCode: String = "USD",
+  val countryCode: String = "US",
+  val sourceProvider: String = "",
+  val verified: Boolean = false,
+  val recordedBy: String = "",
+  val recordedAt: Timestamp? = null,
 )
 
 @Keep

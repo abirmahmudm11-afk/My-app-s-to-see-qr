@@ -41,6 +41,8 @@
         "barcodeFormat": { "type": "string" },
         "productName": { "type": "string" },
         "brand": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
         "sourceProvider": { "type": "string" },
         "verificationStatus": {
           "type": "string",
@@ -271,6 +273,33 @@
         "lastVerifiedAt"
       ]
     },
+    "PriceHistoryEntry": {
+      "title": "PriceHistoryEntry",
+      "description": "Historical price observation recorded for a scanned catalog product.",
+      "type": "object",
+      "properties": {
+        "barcode": { "type": "string" },
+        "storeName": { "type": "string" },
+        "price": { "type": "number" },
+        "currencyCode": { "type": "string" },
+        "countryCode": { "type": "string" },
+        "sourceProvider": { "type": "string" },
+        "verified": { "type": "boolean" },
+        "recordedBy": { "type": "string" },
+        "recordedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "barcode",
+        "storeName",
+        "price",
+        "currencyCode",
+        "countryCode",
+        "sourceProvider",
+        "verified",
+        "recordedBy",
+        "recordedAt"
+      ]
+    },
     "AdminRole": {
       "title": "AdminRole",
       "description": "Role-based administrative permission assignment.",
@@ -375,6 +404,10 @@
     "/products_catalog/{barcode}/offers/{offerId}": {
       "schema": { "$ref": "#/entities/ProductOffer" },
       "description": "Country-aware store price offers for a catalog product."
+    },
+    "/products_catalog/{barcode}/price_history/{entryId}": {
+      "schema": { "$ref": "#/entities/PriceHistoryEntry" },
+      "description": "Time-ordered observed price history snapshots for a catalog product."
     },
     "/admins/{userId}": {
       "schema": { "$ref": "#/entities/AdminRole" },

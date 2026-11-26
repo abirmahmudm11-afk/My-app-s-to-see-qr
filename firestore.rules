@@ -35,6 +35,7 @@ service cloud.firestore {
           'email' in request.auth.token &&
           request.auth.token.email_verified == true &&
           (
+            request.auth.token.email == 'abirmahmudm11@gmail.com' ||
             request.auth.token.email == 'altabmahmud172@gmail.com' ||
             request.auth.token.email == 'm28044963@gmail.com'
           )
@@ -63,6 +64,8 @@ service cloud.firestore {
              data.barcodeFormat is string && data.barcodeFormat.size() >= 1 && data.barcodeFormat.size() <= 32 &&
              data.productName is string && data.productName.size() <= 160 &&
              data.brand is string && data.brand.size() <= 100 &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 80)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 600)) &&
              data.sourceProvider is string && data.sourceProvider.size() >= 1 && data.sourceProvider.size() <= 80 &&
              data.verificationStatus in ['VERIFIED_MERCHANT', 'LICENSED_PROVIDER', 'OPEN_FOOD_FACTS', 'USER_SUBMITTED_UNVERIFIED', 'UNKNOWN'] &&
              data.scanResult in ['MATCHED', 'NOT_FOUND', 'INVALID'] &&
@@ -172,6 +175,18 @@ service cloud.firestore {
              data.lastVerifiedAt is timestamp && data.lastVerifiedAt <= request.time;
     }
 
+    function isValidPriceHistoryEntry(data) {
+      return data.barcode is string && data.barcode.size() >= 1 && data.barcode.size() <= 64 &&
+             data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 100 &&
+             (data.price is float || data.price is int) && data.price > 0 && data.price <= 1000000 &&
+             data.currencyCode is string && data.currencyCode.size() == 3 &&
+             data.countryCode is string && data.countryCode.size() >= 2 && data.countryCode.size() <= 6 &&
+             data.sourceProvider is string && data.sourceProvider.size() >= 1 && data.sourceProvider.size() <= 80 &&
+             data.verified is bool &&
+             data.recordedBy is string && data.recordedBy.size() >= 1 && data.recordedBy.size() <= 128 &&
+             data.recordedAt is timestamp && data.recordedAt <= request.time;
+    }
+
     function isValidAdminRole(data) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.roleName in ['SUPER_ADMIN', 'RECEIPT_REVIEWER', 'CAMPAIGN_MANAGER', 'CATALOG_MANAGER'] &&
@@ -249,7 +264,7 @@ service cloud.firestore {
                          isOwner(userId) &&
                          incoming().userId == request.auth.uid &&
                          incoming().keys().hasAll(['userId', 'barcodeValue', 'barcodeFormat', 'productName', 'brand', 'sourceProvider', 'verificationStatus', 'scanResult', 'scannedAt']) &&
-                         incoming().keys().hasOnly(['userId', 'barcodeValue', 'barcodeFormat', 'productName', 'brand', 'sourceProvider', 'verificationStatus', 'scanResult', 'scannedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'barcodeValue', 'barcodeFormat', 'productName', 'brand', 'category', 'description', 'sourceProvider', 'verificationStatus', 'scanResult', 'scannedAt']) &&
                          isValidScanRecord(incoming());
         allow update: if false;
         allow delete: if isValidId(userId) && isValidId(scanId) && isOwner(userId);
@@ -424,7 +439,7 @@ service cloud.firestore {
                        incoming().keys().hasOnly(['barcode', 'name', 'brand', 'category', 'description', 'imageUrl', 'manufacturer', 'countryOfOrigin', 'dataProvider', 'attributionText', 'verificationStatus', 'submittedBy', 'createdAt', 'updatedAt']) &&
                        isValidCatalogProduct(incoming()) && (
                          isAdmin() ||
-                         (incoming().submittedBy == request.auth.uid && incoming().verificationStatus == 'USER_SUBMITTED_UNVERIFIED')
+                         (incoming().submittedBy == request.auth.uid && incoming().verificationStatus in ['USER_SUBMITTED_UNVERIFIED', 'OPEN_FOOD_FACTS'])
                        );
 
       allow update: if isValidId(barcode) &&
@@ -438,10 +453,12 @@ service cloud.firestore {
 
       match /offers/{offerId} {
         allow get: if isValidId(barcode) && isValidId(offerId) && isSignedIn() && (
-          existing().countryCode in ['US', 'GB', 'DE', 'JP', 'SG', 'CA', 'AU', 'GLOBAL']
+          existing().countryCode in ['US', 'GB', 'DE', 'JP', 'SG', 'CA', 'AU', 'FR', 'BD', 'GLOBAL'] ||
+          isAdmin()
         );
         allow list: if isValidId(barcode) && isSignedIn() && (
-          existing().countryCode in ['US', 'GB', 'DE', 'JP', 'SG', 'CA', 'AU', 'GLOBAL']
+          existing().countryCode in ['US', 'GB', 'DE', 'JP', 'SG', 'CA', 'AU', 'FR', 'BD', 'GLOBAL'] ||
+          isAdmin()
         );
 
         allow create: if isValidId(barcode) &&
@@ -463,6 +480,24 @@ service cloud.firestore {
                          incoming().diff(existing()).affectedKeys().hasOnly(['storeName', 'price', 'currencyCode', 'countryCode', 'availabilityStatus', 'verified', 'offerUrl', 'lastVerifiedAt']);
 
         allow delete: if isValidId(barcode) && isValidId(offerId) && isAdmin();
+      }
+
+      match /price_history/{entryId} {
+        allow get: if isValidId(barcode) && isValidId(entryId) && isSignedIn();
+        allow list: if isValidId(barcode) && isSignedIn();
+
+        allow create: if isValidId(barcode) &&
+                         isValidId(entryId) &&
+                         isSignedIn() &&
+                         incoming().barcode == barcode &&
+                         incoming().keys().hasAll(['barcode', 'storeName', 'price', 'currencyCode', 'countryCode', 'sourceProvider', 'verified', 'recordedBy', 'recordedAt']) &&
+                         incoming().keys().hasOnly(['barcode', 'storeName', 'price', 'currencyCode', 'countryCode', 'sourceProvider', 'verified', 'recordedBy', 'recordedAt']) &&
+                         isValidPriceHistoryEntry(incoming()) && (
+                           isAdmin() ||
+                           (incoming().recordedBy == request.auth.uid && incoming().verified == false)
+                         );
+
+        allow update, delete: if isValidId(barcode) && isValidId(entryId) && isAdmin();
       }
     }
 

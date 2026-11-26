@@ -152,6 +152,9 @@ class ScannerViewModel(private val container: AppContainer) : ViewModel() {
         is ProductLookupOutcome.Found -> {
           val product = outcome.product
           runCatching {
+            container.productRepository.syncScannedProductToFirestore(product)
+          }
+          runCatching {
             container.userWalletRepository.recordScan(
               barcodeValue = barcode,
               barcodeFormat = format.label,
