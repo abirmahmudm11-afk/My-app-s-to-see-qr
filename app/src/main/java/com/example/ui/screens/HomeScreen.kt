@@ -33,6 +33,8 @@ import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Paid
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
@@ -70,6 +72,7 @@ import com.example.R
 import com.example.data.model.Campaign
 import com.example.data.model.ScanContext
 import com.example.data.model.ScanRecord
+import com.example.domain.EarningsEngine
 import com.example.domain.MarketConfig
 import com.example.ui.components.AdMobBannerSlot
 import com.example.ui.components.AnimatedButton
@@ -106,6 +109,8 @@ fun HomeScreen(
   onOpenScan: () -> Unit,
   onRescan: (ScanContext) -> Unit,
   onOpenDiscover: () -> Unit,
+  onOpenEarnings: () -> Unit = {},
+  onWatchRewardedAd: () -> Unit = {},
   onOpenRewards: () -> Unit,
   onOpenReceiptSubmit: (String?) -> Unit,
   onOpenProduct: (String) -> Unit,
@@ -261,7 +266,7 @@ fun HomeScreen(
             ) {
               Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                  text = "AVAILABLE BALANCE",
+                  text = "AD EARNINGS (10% SHARE)",
                   style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                   color = ViewfinderMuted,
                 )
@@ -270,9 +275,10 @@ fun HomeScreen(
                   horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                   Text(
-                    text = "$animatedAvailablePoints",
+                    text = EarningsEngine.formatUsdFromMicros(uiState.earningsWallet.availableMicros),
                     style = TabularFigureLargeStyle,
                     color = Color.White,
+                    modifier = Modifier.testTag("home_earnings_balance_value"),
                   )
                   Surface(
                     color = SignalIndigoDark.copy(alpha = 0.18f),
@@ -280,16 +286,24 @@ fun HomeScreen(
                     modifier = Modifier.padding(bottom = 7.dp),
                   ) {
                     Text(
-                      text = "PTS",
+                      text = "USDT",
                       style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                       color = SignalIndigoDark,
                       modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
                     )
                   }
                 }
+                Text(
+                  text = "Min $1.00 Binance BEP-20 payout · $animatedAvailablePoints PTS",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = ViewfinderMuted,
+                )
               }
 
               Surface(
+                modifier = Modifier
+                  .clip(RoundedCornerShape(12.dp))
+                  .bounceClickable(onClick = onOpenRewards),
                 color = Color.White.copy(alpha = 0.08f),
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
@@ -299,14 +313,14 @@ fun HomeScreen(
                   horizontalAlignment = Alignment.End,
                 ) {
                   Text(
-                    text = "$animatedPendingPoints PTS",
+                    text = "${uiState.earningsWallet.adCompletionCount} Ads",
                     style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
-                    color = ReticleAmber,
+                    color = LedgerJadeDark,
                   )
                   Text(
-                    text = "Pending review",
+                    text = "$animatedPendingPoints PTS pend.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = ViewfinderMuted,
+                    color = ReticleAmber,
                   )
                 }
               }
@@ -330,15 +344,15 @@ fun HomeScreen(
               ) {
                 Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(7.dp))
-                Text("Scan Item", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                Text("Scan & Earn", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
               }
 
               AnimatedOutlinedButton(
-                onClick = { onOpenReceiptSubmit(null) },
+                onClick = onOpenEarnings,
                 modifier = Modifier
                   .weight(1f)
                   .height(50.dp)
-                  .testTag("home_log_receipt_button"),
+                  .testTag("home_open_earnings_button"),
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
                 colors = ButtonDefaults.outlinedButtonColors(
@@ -347,13 +361,55 @@ fun HomeScreen(
                 ),
               ) {
                 Icon(
-                  Icons.AutoMirrored.Rounded.ReceiptLong,
+                  Icons.Rounded.Paid,
                   contentDescription = null,
                   tint = Color.White,
                   modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(7.dp))
-                Text("Log Receipt", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                Text("Withdraw", color = Color.White, style = MaterialTheme.typography.labelLarge)
+              }
+            }
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              AnimatedOutlinedButton(
+                onClick = onWatchRewardedAd,
+                modifier = Modifier
+                  .weight(1f)
+                  .height(42.dp)
+                  .testTag("home_watch_ad_button"),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, SignalIndigoDark.copy(alpha = 0.45f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                  containerColor = SignalIndigoDark.copy(alpha = 0.12f),
+                  contentColor = SignalIndigoDark,
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+              ) {
+                Icon(Icons.Rounded.PlayCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Watch Ad (+10%)", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+              }
+              AnimatedOutlinedButton(
+                onClick = { onOpenReceiptSubmit(null) },
+                modifier = Modifier
+                  .weight(1f)
+                  .height(42.dp)
+                  .testTag("home_log_receipt_button"),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                  containerColor = Color.White.copy(alpha = 0.06f),
+                  contentColor = Color.White,
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+              ) {
+                Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Log Receipt", style = MaterialTheme.typography.labelMedium)
               }
             }
           }
@@ -376,6 +432,15 @@ fun HomeScreen(
               .testTag("home_bento_discover"),
           )
           QuickAccessTile(
+            icon = Icons.Rounded.Paid,
+            label = "Earnings",
+            accent = LedgerJadeDark,
+            onClick = onOpenEarnings,
+            modifier = Modifier
+              .weight(1f)
+              .testTag("home_bento_earnings"),
+          )
+          QuickAccessTile(
             icon = Icons.Rounded.AccountBalanceWallet,
             label = "Wallet",
             accent = CobaltAccent,
@@ -385,18 +450,9 @@ fun HomeScreen(
               .testTag("home_bento_wallet"),
           )
           QuickAccessTile(
-            icon = Icons.AutoMirrored.Rounded.ReceiptLong,
-            label = "Receipts",
-            accent = PrecisionAmberDark,
-            onClick = { onOpenReceiptSubmit(null) },
-            modifier = Modifier
-              .weight(1f)
-              .testTag("home_bento_receipts"),
-          )
-          QuickAccessTile(
             icon = Icons.Rounded.History,
             label = "History",
-            accent = LedgerJadeDark,
+            accent = PrecisionAmberDark,
             onClick = onOpenScanHistory,
             modifier = Modifier
               .weight(1f)

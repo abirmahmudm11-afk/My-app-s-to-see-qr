@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -11,25 +12,33 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.model.AdminRole
 import com.example.data.model.AdminRoleName
+import com.example.data.model.EarningsWallet
 import com.example.data.model.PayoutRequest
 import com.example.data.model.RewardTransaction
 import com.example.data.model.RewardWallet
+import com.example.data.model.RewardedAdCompletion
 import com.example.data.model.TransactionStatus
 import com.example.data.model.TransactionType
 import com.example.data.model.UserProfile
+import com.example.data.model.WithdrawalRequest
+import com.example.data.model.WithdrawalStatus
 import com.example.di.AppContainer
+import com.example.ui.components.RewardedAdLoadState
 import com.example.ui.screens.AdminConsoleScreen
+import com.example.ui.screens.EarningsScreen
 import com.example.ui.screens.RewardsScreen
 import com.example.ui.screens.ScanScreen
 import com.example.ui.theme.Scan2MoneyTheme
 import com.example.ui.viewmodel.MainUiState
 import com.example.ui.viewmodel.ScannerViewModel
-import androidx.compose.ui.test.hasScrollToNodeAction
-import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToNode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -212,10 +221,11 @@ class AppUiRobolectricTest {
     composeTestRule.onNodeWithTag("admin_tab_receipts").assertIsDisplayed()
     composeTestRule.onNodeWithTag("admin_tab_more").assertIsDisplayed()
 
+    val expectedProjectId = ApplicationProvider.getApplicationContext<Context>().getString(R.string.project_id)
     composeTestRule.onNode(hasScrollToNodeAction())
       .performScrollToNode(hasTestTag("admin_project_config_card"))
     composeTestRule.onNodeWithTag("admin_project_config_card").assertIsDisplayed()
-    composeTestRule.onNodeWithText("gen-lang-client-0381685396", substring = true).assertIsDisplayed()
+    composeTestRule.onNodeWithText(expectedProjectId, substring = true).assertIsDisplayed()
     composeTestRule.onNodeWithText("abirmahmudm11@gmail.com", substring = true).assertIsDisplayed()
 
     composeTestRule.onNodeWithTag("admin_tab_users").performClick()
@@ -234,6 +244,8 @@ class AppUiRobolectricTest {
     val container = AppContainer(context)
     val scannerViewModel = ScannerViewModel(container)
 
+    var watchedSource: String? = null
+    var watchedCode: String? = null
     composeTestRule.setContent {
       Scan2MoneyTheme(darkTheme = true, reducedMotion = true) {
         ScanScreen(
@@ -244,6 +256,10 @@ class AppUiRobolectricTest {
           onOpenProductDetail = {},
           onOpenHistory = {},
           onOpenRewardsOrPromo = {},
+          onWatchRewardedAdForScan = { source, code ->
+            watchedSource = source
+            watchedCode = code
+          },
           onShowMessage = {},
         )
       }
@@ -258,6 +274,10 @@ class AppUiRobolectricTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithText("Promo Code Detected").assertIsDisplayed()
     composeTestRule.onNodeWithText("Code: BONUS100").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("scanner_watch_rewarded_ad_button").assertIsDisplayed().performClick()
+    composeTestRule.waitForIdle()
+    assertEquals("QR_SCAN", watchedSource)
+    assertEquals("BONUS100", watchedCode)
   }
 
   @Test
@@ -299,5 +319,160 @@ class AppUiRobolectricTest {
     composeTestRule.waitForIdle()
 
     composeTestRule.onNodeWithText("Enter a partner brand name.").assertIsDisplayed()
+  }
+
+  @Test
+  fun earningsScreenDisplaysBalanceAdHistoryAndWithdrawals() {
+    val state = MainUiState(
+      earningsWallet = EarningsWallet(
+        availableMicros = 1_450_000L, // $1.45
+        lifetimeEarnedMicros = 2_450_000L,
+        pendingWithdrawalMicros = 1_000_000L,
+        withdrawnMicros = 0L,
+        adCompletionCount = 4L,
+      ),
+      adRewards = listOf(
+        RewardedAdCompletion(
+          id = "ad_1",
+          triggerSource = "QR_SCAN",
+          scannedCode = "PROMO:BONUS100",
+          adValueMicros = 500_000L,
+          userShareMicros = 50_000L,
+          currencyCode = "USD",
+        ),
+      ),
+      withdrawalRequests = listOf(
+        WithdrawalRequest(
+          id = "wd_1",
+          network = "BEP20",
+          asset = "USDT",
+          walletAddress = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+          amountMicros = 1_000_000L,
+          status = WithdrawalStatus.PENDING.name,
+        ),
+      ),
+    )
+
+    composeTestRule.setContent {
+      Scan2MoneyTheme(darkTheme = true, reducedMotion = true) {
+        EarningsScreen(
+          uiState = state,
+          adLoadState = RewardedAdLoadState.Ready,
+          onWatchRewardedAd = {},
+          onOpenScan = {},
+          onOpenRewards = {},
+          onRequestWithdrawal = { _, _ -> },
+          onSignInRequested = {},
+          isSignedIn = true,
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("earnings_total_balance").assertIsDisplayed().assertTextContains("$1.45")
+
+    composeTestRule.onNode(hasScrollToNodeAction())
+      .performScrollToNode(hasTestTag("withdrawal_history_section"))
+    composeTestRule.onNodeWithText("$1.00 USDT (BEP20)").assertIsDisplayed()
+    composeTestRule.onNodeWithText("PENDING").assertIsDisplayed()
+
+    composeTestRule.onNode(hasScrollToNodeAction())
+      .performScrollToNode(hasTestTag("ad_rewards_history_section"))
+    composeTestRule.onNodeWithText("QR Code Scan Reward").assertIsDisplayed()
+    composeTestRule.onNodeWithText("+$0.05").assertIsDisplayed()
+  }
+
+  @Test
+  fun earningsScreenValidatesOneDollarMinimumAndBep20Address() {
+    var submittedAddress: String? = null
+    var submittedAmountMicros: Long? = null
+
+    val lowBalanceState = MainUiState(
+      earningsWallet = EarningsWallet(availableMicros = 500_000L), // $0.50
+    )
+
+    composeTestRule.setContent {
+      Scan2MoneyTheme(darkTheme = true, reducedMotion = true) {
+        EarningsScreen(
+          uiState = lowBalanceState,
+          adLoadState = RewardedAdLoadState.Ready,
+          onWatchRewardedAd = {},
+          onOpenScan = {},
+          onOpenRewards = {},
+          onRequestWithdrawal = { addr, amt ->
+            submittedAddress = addr
+            submittedAmountMicros = amt
+          },
+          onSignInRequested = {},
+          isSignedIn = true,
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNode(hasScrollToNodeAction())
+      .performScrollToNode(hasTestTag("withdrawal_submit_button"))
+    composeTestRule.onNodeWithTag("withdrawal_address_input")
+      .performTextInput("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
+    composeTestRule.onNodeWithTag("withdrawal_submit_button").performClick()
+    composeTestRule.waitForIdle()
+
+    composeTestRule.onNodeWithTag("withdrawal_validation_error")
+      .assertIsDisplayed()
+      .assertTextContains("Minimum balance of $1.00 USD", substring = true)
+    assertEquals(null, submittedAddress)
+    assertEquals(null, submittedAmountMicros)
+  }
+
+  @Test
+  fun earningsScreenSubmitsValidBinanceBep20Withdrawal() {
+    var submittedAddress: String? = null
+    var submittedAmountMicros: Long? = null
+
+    val eligibleState = MainUiState(
+      earningsWallet = EarningsWallet(availableMicros = 2_500_000L), // $2.50
+    )
+
+    composeTestRule.setContent {
+      Scan2MoneyTheme(darkTheme = true, reducedMotion = true) {
+        EarningsScreen(
+          uiState = eligibleState,
+          adLoadState = RewardedAdLoadState.Ready,
+          onWatchRewardedAd = {},
+          onOpenScan = {},
+          onOpenRewards = {},
+          onRequestWithdrawal = { addr, amt ->
+            submittedAddress = addr
+            submittedAmountMicros = amt
+          },
+          onSignInRequested = {},
+          isSignedIn = true,
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNode(hasScrollToNodeAction())
+      .performScrollToNode(hasTestTag("withdrawal_submit_button"))
+
+    // Reject invalid address first
+    composeTestRule.onNodeWithTag("withdrawal_address_input").performTextInput("0xBAD")
+    composeTestRule.onNodeWithTag("withdrawal_submit_button").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("withdrawal_validation_error")
+      .assertIsDisplayed()
+      .assertTextContains("BEP-20", substring = true)
+
+    // Enter valid Binance USDT BEP-20 address & amount $1.50
+    val validAddress = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+    composeTestRule.onNodeWithTag("withdrawal_address_input").performTextClearance()
+    composeTestRule.onNodeWithTag("withdrawal_address_input").performTextInput(validAddress)
+    composeTestRule.onNodeWithTag("withdrawal_amount_input").performTextClearance()
+    composeTestRule.onNodeWithTag("withdrawal_amount_input").performTextInput("1.50")
+    composeTestRule.onNodeWithTag("withdrawal_submit_button").performClick()
+    composeTestRule.waitForIdle()
+
+    assertEquals(validAddress, submittedAddress)
+    assertEquals(1_500_000L, submittedAmountMicros)
   }
 }

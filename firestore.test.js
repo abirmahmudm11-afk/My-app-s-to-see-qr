@@ -605,4 +605,186 @@ test("Scanned product details, ScanRecord description/category, and price_histor
   );
 });
 
+test("Rewarded Ad completion credits exact 10% adValueMicros and blocks tampered shares", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const now = new Date(Date.now() - 1000);
+  const summaryRef = aliceDb.collection("users").doc(ALICE_UID).collection("earnings").doc("summary");
+
+  // Owner initializes earnings summary at zero
+  await assertSucceeds(
+    summaryRef.set({
+      userId: ALICE_UID,
+      currencyCode: "USD",
+      availableMicros: 0,
+      lifetimeEarnedMicros: 0,
+      pendingWithdrawalMicros: 0,
+      withdrawnMicros: 0,
+      adCompletionCount: 0,
+      updatedAt: now,
+    })
+  );
+
+  // Valid atomic WriteBatch for $0.50 ad value -> exact 10% = 50,000 micros ($0.05)
+  const validBatch = aliceDb.batch();
+  validBatch.update(summaryRef, {
+    availableMicros: 50000,
+    lifetimeEarnedMicros: 50000,
+    adCompletionCount: 1,
+    updatedAt: new Date(Date.now() - 500),
+  });
+  validBatch.set(aliceDb.collection("users").doc(ALICE_UID).collection("ad_rewards").doc("ad_1"), {
+    userId: ALICE_UID,
+    adUnitId: "ca-app-pub-5802460072817241/1598376798",
+    triggerSource: "QR_SCAN",
+    scannedCode: "PROMO:BONUS100",
+    adValueMicros: 500000,
+    userShareMicros: 50000,
+    currencyCode: "USD",
+    precisionType: 1,
+    rewardType: "coins",
+    rewardAmount: 1,
+    createdAt: new Date(Date.now() - 500),
+  });
+  await assertSucceeds(validBatch.commit());
+
+  // Tampered 50% share instead of 10% MUST fail
+  const tamperedBatch = aliceDb.batch();
+  tamperedBatch.update(summaryRef, {
+    availableMicros: 300000,
+    lifetimeEarnedMicros: 300000,
+    adCompletionCount: 2,
+    updatedAt: new Date(Date.now() - 400),
+  });
+  tamperedBatch.set(aliceDb.collection("users").doc(ALICE_UID).collection("ad_rewards").doc("ad_tampered"), {
+    userId: ALICE_UID,
+    adUnitId: "ca-app-pub-5802460072817241/1598376798",
+    triggerSource: "QR_SCAN",
+    scannedCode: "3017620422003",
+    adValueMicros: 500000,
+    userShareMicros: 250000,
+    currencyCode: "USD",
+    precisionType: 1,
+    rewardType: "coins",
+    rewardAmount: 1,
+    createdAt: new Date(Date.now() - 400),
+  });
+  await assertFails(tamperedBatch.commit());
+
+  // Cross-user read/write blocked
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("earnings").doc("summary").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("ad_rewards").get());
+});
+
+test("Binance USDT BEP-20 withdrawals enforce $1.00 minimum, BEP-20 address format, and admin review", async () => {
+  const now = new Date(Date.now() - 1000);
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection("admins").doc(ADMIN_UID).set({
+      userId: ADMIN_UID,
+      roleName: "SUPER_ADMIN",
+      permissions: ["PAYOUT_REVIEW"],
+      createdAt: now,
+    });
+    await db.collection("users").doc(ALICE_UID).collection("earnings").doc("summary").set({
+      userId: ALICE_UID,
+      currencyCode: "USD",
+      availableMicros: 1500000, // $1.50
+      lifetimeEarnedMicros: 1500000,
+      pendingWithdrawalMicros: 0,
+      withdrawnMicros: 0,
+      adCompletionCount: 15,
+      updatedAt: now,
+    });
+  });
+
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const adminDb = testEnv.authenticatedContext(ADMIN_UID).firestore();
+  const summaryRef = aliceDb.collection("users").doc(ALICE_UID).collection("earnings").doc("summary");
+
+  // Under $1.00 withdrawal (500,000 micros = $0.50) MUST fail
+  const underMinBatch = aliceDb.batch();
+  underMinBatch.update(summaryRef, {
+    availableMicros: 1000000,
+    pendingWithdrawalMicros: 500000,
+    updatedAt: now,
+  });
+  underMinBatch.set(aliceDb.collection("withdrawal_requests").doc("w_under_min"), {
+    userId: ALICE_UID,
+    userDisplayName: "Alice",
+    network: "BEP20",
+    asset: "USDT",
+    walletAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+    amountMicros: 500000,
+    status: "PENDING",
+    requestedAt: now,
+    updatedAt: now,
+  });
+  await assertFails(underMinBatch.commit());
+
+  // Invalid BEP-20 address MUST fail
+  const badAddrBatch = aliceDb.batch();
+  badAddrBatch.update(summaryRef, {
+    availableMicros: 500000,
+    pendingWithdrawalMicros: 1000000,
+    updatedAt: now,
+  });
+  badAddrBatch.set(aliceDb.collection("withdrawal_requests").doc("w_bad_addr"), {
+    userId: ALICE_UID,
+    userDisplayName: "Alice",
+    network: "BEP20",
+    asset: "USDT",
+    walletAddress: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",
+    amountMicros: 1000000,
+    status: "PENDING",
+    requestedAt: now,
+    updatedAt: now,
+  });
+  await assertFails(badAddrBatch.commit());
+
+  // Valid $1.25 BEP-20 USDT withdrawal succeeds
+  const validBatch = aliceDb.batch();
+  validBatch.update(summaryRef, {
+    availableMicros: 250000,
+    pendingWithdrawalMicros: 1250000,
+    updatedAt: now,
+  });
+  validBatch.set(aliceDb.collection("withdrawal_requests").doc("w_valid_1"), {
+    userId: ALICE_UID,
+    userDisplayName: "Alice",
+    network: "BEP20",
+    asset: "USDT",
+    walletAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+    amountMicros: 1250000,
+    status: "PENDING",
+    requestedAt: now,
+    updatedAt: now,
+  });
+  await assertSucceeds(validBatch.commit());
+
+  // Owner queries work with filter; unfiltered list fails for non-admin
+  await assertSucceeds(aliceDb.collection("withdrawal_requests").where("userId", "==", ALICE_UID).get());
+  await assertFails(bobDb.collection("withdrawal_requests").get());
+
+  // Non-admin cannot approve own withdrawal; admin can mark PAID
+  await assertFails(
+    aliceDb.collection("withdrawal_requests").doc("w_valid_1").update({
+      status: "PAID",
+      reviewedBy: ALICE_UID,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("withdrawal_requests").doc("w_valid_1").update({
+      status: "PAID",
+      reviewedBy: ADMIN_UID,
+      txHash: "0xabc123def456",
+      adminNotes: "Sent USDT BEP-20",
+      updatedAt: now,
+    })
+  );
+});
+
+
 

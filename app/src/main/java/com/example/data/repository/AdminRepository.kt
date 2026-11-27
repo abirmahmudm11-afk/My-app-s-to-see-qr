@@ -7,6 +7,7 @@ import com.example.data.model.Campaign
 import com.example.data.model.CampaignStatus
 import com.example.data.model.CatalogProduct
 import com.example.data.model.DeletionRequest
+import com.example.data.model.EarningsWallet
 import com.example.data.model.PayoutRequest
 import com.example.data.model.PayoutStatus
 import com.example.data.model.ReceiptReviewStatus
@@ -17,6 +18,9 @@ import com.example.data.model.TransactionStatus
 import com.example.data.model.TransactionType
 import com.example.data.model.UserProfile
 import com.example.data.model.VerificationStatus
+import com.example.data.model.WithdrawalRequest
+import com.example.data.model.WithdrawalStatus
+import com.example.domain.EarningsEngine
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
@@ -75,6 +79,16 @@ class AdminRepository(
     val reg = db.collection("payout_requests").addSnapshotListener { snap, error ->
       if (error != null) return@addSnapshotListener
       val items = snap?.documents?.mapNotNull { it.toObject(PayoutRequest::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
+        ?.sortedByDescending { it.requestedAt?.seconds ?: 0L } ?: emptyList()
+      trySend(items)
+    }
+    awaitClose { reg.remove() }
+  }
+
+  fun observeAllWithdrawalRequests(): Flow<List<WithdrawalRequest>> = callbackFlow {
+    val reg = db.collection("withdrawal_requests").addSnapshotListener { snap, error ->
+      if (error != null) return@addSnapshotListener
+      val items = snap?.documents?.mapNotNull { it.toObject(WithdrawalRequest::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = it.id) }
         ?.sortedByDescending { it.requestedAt?.seconds ?: 0L } ?: emptyList()
       trySend(items)
     }
@@ -273,6 +287,108 @@ class AdminRepository(
       batch.commit().await()
     } catch (e: Exception) {
       FirestoreErrorHandler.handleFirestoreError(e, OperationType.WRITE, "payout_requests/${request.id}", auth)
+    }
+  }
+
+  suspend fun reviewWithdrawalRequest(
+    request: WithdrawalRequest,
+    newStatus: WithdrawalStatus,
+    adminNotes: String,
+    txHash: String = "",
+  ) {
+    val adminUid = auth.currentUser?.uid ?: throw IllegalStateException("Admin sign-in required.")
+    val cleanNotes = adminNotes.trim().ifEmpty {
+      when (newStatus) {
+        WithdrawalStatus.APPROVED -> "Approved for Binance USDT BEP-20 transfer"
+        WithdrawalStatus.PAID -> "USDT (BEP-20) transfer completed"
+        WithdrawalStatus.REJECTED -> "Withdrawal declined & USD balance refunded"
+        WithdrawalStatus.PENDING -> "Pending review"
+      }
+    }.take(300)
+    val cleanTxHash = txHash.trim().take(128)
+
+    val withdrawalRef = db.collection("withdrawal_requests").document(request.id)
+    val userRef = db.collection("users").document(request.userId)
+    val earningsRef = userRef.collection("earnings").document("summary")
+    val notifRef = userRef.collection("notifications").document()
+    val auditRef = db.collection("audit_logs").document()
+
+    try {
+      val batch = db.batch()
+      val updatePayload = hashMapOf<String, Any>(
+        "status" to newStatus.name,
+        "adminNotes" to cleanNotes,
+        "reviewedBy" to adminUid,
+        "updatedAt" to FieldValue.serverTimestamp(),
+      )
+      if (cleanTxHash.isNotEmpty()) {
+        updatePayload["txHash"] = cleanTxHash
+      }
+      batch.update(withdrawalRef, updatePayload)
+
+      if (newStatus == WithdrawalStatus.PAID || newStatus == WithdrawalStatus.REJECTED) {
+        val snap = earningsRef.get().await()
+        val current = snap.toObject(EarningsWallet::class.java) ?: EarningsWallet(userId = request.userId)
+        val newPending = maxOf(0L, current.pendingWithdrawalMicros - request.amountMicros)
+        if (snap.exists()) {
+          val walletUpdates = if (newStatus == WithdrawalStatus.PAID) {
+            mapOf(
+              "pendingWithdrawalMicros" to newPending,
+              "withdrawnMicros" to (current.withdrawnMicros + request.amountMicros),
+              "updatedAt" to FieldValue.serverTimestamp(),
+            )
+          } else {
+            mapOf(
+              "availableMicros" to (current.availableMicros + request.amountMicros),
+              "pendingWithdrawalMicros" to newPending,
+              "updatedAt" to FieldValue.serverTimestamp(),
+            )
+          }
+          batch.update(earningsRef, walletUpdates)
+        } else {
+          batch.set(
+            earningsRef,
+            hashMapOf(
+              "userId" to request.userId,
+              "currencyCode" to "USD",
+              "availableMicros" to if (newStatus == WithdrawalStatus.REJECTED) request.amountMicros else 0L,
+              "lifetimeEarnedMicros" to request.amountMicros,
+              "pendingWithdrawalMicros" to 0L,
+              "withdrawnMicros" to if (newStatus == WithdrawalStatus.PAID) request.amountMicros else 0L,
+              "adCompletionCount" to 0L,
+              "updatedAt" to FieldValue.serverTimestamp(),
+            ),
+          )
+        }
+      }
+
+      val formattedAmount = EarningsEngine.formatUsdFromMicros(request.amountMicros)
+      batch.set(
+        notifRef,
+        hashMapOf(
+          "userId" to request.userId,
+          "category" to "REWARD_STATUS",
+          "title" to "USDT Withdrawal ${newStatus.name} ($formattedAmount)".take(120),
+          "body" to "BEP-20 ${request.walletAddress.take(10)}... • $cleanNotes".take(500),
+          "read" to false,
+          "referenceId" to request.id,
+          "createdAt" to FieldValue.serverTimestamp(),
+        ),
+      )
+      batch.set(
+        auditRef,
+        hashMapOf(
+          "actorId" to adminUid,
+          "action" to "WITHDRAWAL_${newStatus.name}",
+          "entityType" to "withdrawal_request",
+          "entityId" to request.id,
+          "reason" to "$formattedAmount USDT BEP-20: $cleanNotes".take(300),
+          "timestamp" to FieldValue.serverTimestamp(),
+        ),
+      )
+      batch.commit().await()
+    } catch (e: Exception) {
+      FirestoreErrorHandler.handleFirestoreError(e, OperationType.WRITE, "withdrawal_requests/${request.id}", auth)
     }
   }
 

@@ -6,6 +6,7 @@ object Routes {
   const val HOME = "home"
   const val DISCOVER = "discover"
   const val SCAN = "scan"
+  const val EARNINGS = "earnings"
   const val REWARDS = "rewards"
   const val PROFILE = "profile"
 

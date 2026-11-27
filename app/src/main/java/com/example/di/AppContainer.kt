@@ -9,6 +9,7 @@ import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.remote.OpenPricesApi
 import com.example.data.remote.SimulatedRetailerPriceApi
 import com.example.data.repository.AdminRepository
+import com.example.data.repository.EarningsRepository
 import com.example.data.repository.ProductRepository
 import com.example.data.repository.ReceiptAndCampaignRepository
 import com.example.data.repository.ScanHistoryRepository
@@ -95,6 +96,10 @@ class AppContainer(context: Context) {
     auth = auth,
   )
   val adminRepository = AdminRepository(
+    db = firestore,
+    auth = auth,
+  )
+  val earningsRepository = EarningsRepository(
     db = firestore,
     auth = auth,
   )

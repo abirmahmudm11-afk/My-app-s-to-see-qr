@@ -63,7 +63,9 @@ import androidx.compose.material.icons.rounded.FlashOff
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.Paid
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -108,12 +110,14 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ScanContext
+import com.example.domain.EarningsEngine
 import com.example.domain.SupportedBarcodeFormat
 import com.example.ui.components.AnimatedButton
 import com.example.ui.components.AnimatedIconButton
 import com.example.ui.components.AnimatedOutlinedButton
 import com.example.ui.components.AnimatedTextButton
 import com.example.ui.components.BarcodeFeedbackPlayer
+import com.example.ui.components.RewardedAdLoadState
 import com.example.ui.components.VerificationLabel
 import com.example.ui.components.bounceClickable
 import com.example.ui.theme.LedgerJadeDark
@@ -145,10 +149,14 @@ fun ScanScreen(
   scannerViewModel: ScannerViewModel,
   scanContext: ScanContext?,
   reducedMotion: Boolean,
+  earningsBalanceMicros: Long = 0L,
+  adLoadState: RewardedAdLoadState = RewardedAdLoadState.Idle,
   onClearScanContext: () -> Unit,
   onOpenProductDetail: (String) -> Unit,
   onOpenHistory: () -> Unit,
+  onOpenEarnings: () -> Unit = {},
   onOpenRewardsOrPromo: (String?) -> Unit,
+  onWatchRewardedAdForScan: (triggerSource: String, scannedCode: String) -> Unit = { _, _ -> },
   onShowMessage: (String) -> Unit,
 ) {
   val context = LocalContext.current
@@ -202,24 +210,6 @@ fun ScanScreen(
         delay(200L)
       }
       detectionLocked = false
-    }
-  }
-
-  LaunchedEffect(uiState) {
-    when (val state = uiState) {
-      is ScannerUiState.Matched -> {
-        delay(if (reducedMotion) 200L else 480L)
-        val code = state.barcode
-        scannerViewModel.resetScanner()
-        onOpenProductDetail(code)
-      }
-      is ScannerUiState.NotFound -> {
-        delay(if (reducedMotion) 200L else 480L)
-        val code = state.barcode
-        scannerViewModel.resetScanner()
-        onOpenProductDetail(code)
-      }
-      else -> Unit
     }
   }
 
@@ -324,17 +314,46 @@ fun ScanScreen(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
           Text(
-            text = "Barcode Scanner",
+            text = "QR & Barcode Scanner",
             style = MaterialTheme.typography.titleLarge,
             color = Color.White,
           )
-          Text(
-            text = "13 retail & QR symbologies",
-            style = MaterialTheme.typography.bodySmall,
-            color = ViewfinderMuted,
-          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Text(
+              text = "Scan to unlock +10% ad share",
+              style = MaterialTheme.typography.bodySmall,
+              color = ViewfinderMuted,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Surface(
+              modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .bounceClickable(onClick = onOpenEarnings)
+                .testTag("scanner_earnings_chip"),
+              color = SignalIndigoDark.copy(alpha = 0.16f),
+              shape = RoundedCornerShape(999.dp),
+              border = BorderStroke(1.dp, SignalIndigoDark.copy(alpha = 0.4f)),
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                Icon(Icons.Rounded.Paid, contentDescription = null, tint = SignalIndigoDark, modifier = Modifier.size(12.dp))
+                Text(
+                  text = EarningsEngine.formatUsdFromMicros(earningsBalanceMicros),
+                  style = TabularDataStyle.copy(fontWeight = FontWeight.Bold, fontSize = MaterialTheme.typography.labelSmall.fontSize),
+                  color = SignalIndigoDark,
+                )
+              }
+            }
+          }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -754,6 +773,10 @@ fun ScanScreen(
                   style = TabularDataStyle,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                ScanRewardAdUnlockButton(
+                  adLoadState = adLoadState,
+                  onClick = { onWatchRewardedAdForScan("BARCODE_SCAN", state.barcode) },
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                   AnimatedOutlinedButton(
                     onClick = { scannerViewModel.resetScanner() },
@@ -795,9 +818,13 @@ fun ScanScreen(
               ) {
                 Text("Not Found in Catalog", style = MaterialTheme.typography.titleMedium)
                 Text(
-                  text = "Barcode ${state.barcode} (${state.format.label}) was saved to History. You can add details or compare web prices.",
+                  text = "Barcode ${state.barcode} (${state.format.label}) was saved to History. Claim your scan reward via a short ad or add item details.",
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ScanRewardAdUnlockButton(
+                  adLoadState = adLoadState,
+                  onClick = { onWatchRewardedAdForScan("BARCODE_SCAN", state.barcode) },
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                   AnimatedOutlinedButton(
@@ -852,6 +879,10 @@ fun ScanScreen(
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                   maxLines = 2,
                   overflow = TextOverflow.Ellipsis,
+                )
+                ScanRewardAdUnlockButton(
+                  adLoadState = adLoadState,
+                  onClick = { onWatchRewardedAdForScan("QR_SCAN", state.url) },
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                   AnimatedOutlinedButton(
@@ -926,6 +957,10 @@ fun ScanScreen(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                   )
                 }
+                ScanRewardAdUnlockButton(
+                  adLoadState = adLoadState,
+                  onClick = { onWatchRewardedAdForScan("QR_SCAN", state.promoCode) },
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                   AnimatedOutlinedButton(
                     onClick = { scannerViewModel.resetScanner() },
@@ -1550,3 +1585,40 @@ private fun ScanningReticleOverlay(
     }
   }
 }
+
+@Composable
+private fun ScanRewardAdUnlockButton(
+  adLoadState: RewardedAdLoadState,
+  onClick: () -> Unit,
+) {
+  AnimatedButton(
+    onClick = onClick,
+    enabled = adLoadState !is RewardedAdLoadState.Showing,
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("scanner_watch_rewarded_ad_button"),
+    shape = RoundedCornerShape(10.dp),
+    colors = ButtonDefaults.buttonColors(
+      containerColor = MaterialTheme.colorScheme.secondaryContainer,
+      contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ),
+  ) {
+    if (adLoadState is RewardedAdLoadState.Loading || adLoadState is RewardedAdLoadState.Showing) {
+      CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+    } else {
+      Icon(Icons.Rounded.PlayCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+    }
+    Spacer(Modifier.width(6.dp))
+    Text(
+      text = when (adLoadState) {
+        is RewardedAdLoadState.Showing -> "Playing Rewarded Ad…"
+        is RewardedAdLoadState.Loading -> "Loading Rewarded Ad (+10%)…"
+        else -> "Claim Scan Bonus · Watch Ad (+10% Share)"
+      },
+      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+  }
+}
+

@@ -366,6 +366,92 @@
         "requestedAt",
         "updatedAt"
       ]
+    },
+    "EarningsWallet": {
+      "title": "EarningsWallet",
+      "description": "User USD earnings ledger summary (micros) updated on rewarded ad completions (10% share) and BEP-20 withdrawal requests.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "currencyCode": { "type": "string", "enum": ["USD"] },
+        "availableMicros": { "type": "integer" },
+        "lifetimeEarnedMicros": { "type": "integer" },
+        "pendingWithdrawalMicros": { "type": "integer" },
+        "withdrawnMicros": { "type": "integer" },
+        "adCompletionCount": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp (FieldValue.serverTimestamp())." }
+      },
+      "required": [
+        "userId",
+        "currencyCode",
+        "availableMicros",
+        "lifetimeEarnedMicros",
+        "pendingWithdrawalMicros",
+        "withdrawnMicros",
+        "adCompletionCount",
+        "updatedAt"
+      ]
+    },
+    "RewardedAdCompletion": {
+      "title": "RewardedAdCompletion",
+      "description": "Immutable log of a rewarded ad completion crediting exactly 10% of AdValue micros.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "adUnitId": { "type": "string" },
+        "triggerSource": { "type": "string", "enum": ["QR_SCAN", "BARCODE_SCAN", "EARNINGS_BONUS"] },
+        "scannedCode": { "type": "string" },
+        "adValueMicros": { "type": "integer" },
+        "userShareMicros": { "type": "integer" },
+        "currencyCode": { "type": "string" },
+        "precisionType": { "type": "integer" },
+        "rewardType": { "type": "string" },
+        "rewardAmount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp (FieldValue.serverTimestamp())." }
+      },
+      "required": [
+        "userId",
+        "adUnitId",
+        "triggerSource",
+        "scannedCode",
+        "adValueMicros",
+        "userShareMicros",
+        "currencyCode",
+        "precisionType",
+        "rewardType",
+        "rewardAmount",
+        "createdAt"
+      ]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Binance USDT BEP-20 payout request requiring at least $1.00 USD (1,000,000 micros).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "network": { "type": "string", "enum": ["BEP20"] },
+        "asset": { "type": "string", "enum": ["USDT"] },
+        "walletAddress": { "type": "string" },
+        "amountMicros": { "type": "integer" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "PAID", "REJECTED"] },
+        "adminNotes": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "txHash": { "type": "string" },
+        "requestedAt": { "type": "string", "format": "date-time", "description": "Server timestamp (FieldValue.serverTimestamp())." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp (FieldValue.serverTimestamp())." }
+      },
+      "required": [
+        "userId",
+        "userDisplayName",
+        "network",
+        "asset",
+        "walletAddress",
+        "amountMicros",
+        "status",
+        "requestedAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -384,6 +470,14 @@
     "/users/{userId}/transactions/{transactionId}": {
       "schema": { "$ref": "#/entities/RewardTransaction" },
       "description": "Immutable user reward ledger transactions."
+    },
+    "/users/{userId}/earnings/{earningsDocId}": {
+      "schema": { "$ref": "#/entities/EarningsWallet" },
+      "description": "User USD earnings summary document (earningsDocId = summary)."
+    },
+    "/users/{userId}/ad_rewards/{rewardId}": {
+      "schema": { "$ref": "#/entities/RewardedAdCompletion" },
+      "description": "User-scoped history of rewarded ad completions (10% ad value credit)."
     },
     "/users/{userId}/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/AppNotification" },
@@ -424,6 +518,10 @@
     "/payout_requests/{requestId}": {
       "schema": { "$ref": "#/entities/PayoutRequest" },
       "description": "User payout and voucher redemption requests reviewed by admins."
+    },
+    "/withdrawal_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/WithdrawalRequest" },
+      "description": "Binance USDT BEP-20 withdrawal requests ($1.00 minimum) reviewed by admins."
     }
   }
 }

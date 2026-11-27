@@ -225,6 +225,48 @@ service cloud.firestore {
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    function isValidEarningsWallet(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.currencyCode == 'USD' &&
+             data.availableMicros is int && data.availableMicros >= 0 &&
+             data.lifetimeEarnedMicros is int && data.lifetimeEarnedMicros >= 0 &&
+             data.pendingWithdrawalMicros is int && data.pendingWithdrawalMicros >= 0 &&
+             data.withdrawnMicros is int && data.withdrawnMicros >= 0 &&
+             data.adCompletionCount is int && data.adCompletionCount >= 0 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidRewardedAdCompletion(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.adUnitId is string && data.adUnitId.size() >= 5 && data.adUnitId.size() <= 128 &&
+             data.triggerSource in ['QR_SCAN', 'BARCODE_SCAN', 'EARNINGS_BONUS'] &&
+             data.scannedCode is string && data.scannedCode.size() <= 128 &&
+             data.adValueMicros is int && data.adValueMicros >= 0 && data.adValueMicros <= 10000000 &&
+             data.userShareMicros is int && data.userShareMicros >= 0 && data.userShareMicros <= 1000000 &&
+             (data.userShareMicros * 10 <= data.adValueMicros) &&
+             ((data.userShareMicros + 1) * 10 > data.adValueMicros) &&
+             data.currencyCode is string && data.currencyCode.size() >= 3 && data.currencyCode.size() <= 6 &&
+             data.precisionType is int && data.precisionType >= 0 && data.precisionType <= 3 &&
+             data.rewardType is string && data.rewardType.size() <= 64 &&
+             data.rewardAmount is int && data.rewardAmount >= 0 && data.rewardAmount <= 100000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidWithdrawalRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userDisplayName is string && data.userDisplayName.size() >= 1 && data.userDisplayName.size() <= 80 &&
+             data.network == 'BEP20' &&
+             data.asset == 'USDT' &&
+             data.walletAddress is string && data.walletAddress.matches('^0x[a-fA-F0-9]{40}$') &&
+             data.amountMicros is int && data.amountMicros >= 1000000 && data.amountMicros <= 10000000000 &&
+             data.status in ['PENDING', 'APPROVED', 'PAID', 'REJECTED'] &&
+             (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 300)) &&
+             (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 128)) &&
+             (!('txHash' in data) || (data.txHash is string && data.txHash.size() <= 128)) &&
+             data.requestedAt is timestamp && data.requestedAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     // --- Collection Rules ---
 
     // 1. User Profiles & User-Scoped Subcollections
@@ -339,6 +381,90 @@ service cloud.firestore {
                                get(/databases/$(database)/documents/users/$(userId)/wallet/summary).data.redeemedPoints + incoming().amount
                            )
                          );
+
+        allow update, delete: if false;
+      }
+
+      // User USD Earnings Summary
+      match /earnings/{earningsDocId} {
+        allow get: if isValidId(userId) && earningsDocId == 'summary' && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+
+        allow create: if isValidId(userId) &&
+                         earningsDocId == 'summary' &&
+                         isValidEarningsWallet(incoming()) &&
+                         incoming().keys().hasAll(['userId', 'currencyCode', 'availableMicros', 'lifetimeEarnedMicros', 'pendingWithdrawalMicros', 'withdrawnMicros', 'adCompletionCount', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'currencyCode', 'availableMicros', 'lifetimeEarnedMicros', 'pendingWithdrawalMicros', 'withdrawnMicros', 'adCompletionCount', 'updatedAt']) && (
+                           (
+                             isOwner(userId) &&
+                             incoming().userId == request.auth.uid &&
+                             incoming().availableMicros == 0 &&
+                             incoming().lifetimeEarnedMicros == 0 &&
+                             incoming().pendingWithdrawalMicros == 0 &&
+                             incoming().withdrawnMicros == 0 &&
+                             incoming().adCompletionCount == 0
+                           ) ||
+                           (
+                             isAdmin() &&
+                             incoming().userId == userId
+                           )
+                         );
+
+        allow update: if isValidId(userId) &&
+                         earningsDocId == 'summary' &&
+                         isSignedIn() &&
+                         isValidEarningsWallet(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().currencyCode == existing().currencyCode && (
+                           isAdmin() ||
+                           (
+                             // Action 1: Rewarded Ad completion credit (exact 10% share <= $1.00 per ad)
+                             isOwner(userId) &&
+                             incoming().pendingWithdrawalMicros == existing().pendingWithdrawalMicros &&
+                             incoming().withdrawnMicros == existing().withdrawnMicros &&
+                             incoming().adCompletionCount == existing().adCompletionCount + 1 &&
+                             incoming().availableMicros >= existing().availableMicros &&
+                             (incoming().availableMicros - existing().availableMicros) <= 1000000 &&
+                             (incoming().availableMicros - existing().availableMicros) ==
+                               (incoming().lifetimeEarnedMicros - existing().lifetimeEarnedMicros) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['availableMicros', 'lifetimeEarnedMicros', 'adCompletionCount', 'updatedAt'])
+                           ) ||
+                           (
+                             // Action 2: BEP-20 USDT Withdrawal request deduction ($1.00 USD minimum)
+                             isOwner(userId) &&
+                             incoming().lifetimeEarnedMicros == existing().lifetimeEarnedMicros &&
+                             incoming().withdrawnMicros == existing().withdrawnMicros &&
+                             incoming().adCompletionCount == existing().adCompletionCount &&
+                             existing().availableMicros >= 1000000 &&
+                             incoming().availableMicros < existing().availableMicros &&
+                             (existing().availableMicros - incoming().availableMicros) >= 1000000 &&
+                             (existing().availableMicros - incoming().availableMicros) ==
+                               (incoming().pendingWithdrawalMicros - existing().pendingWithdrawalMicros) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['availableMicros', 'pendingWithdrawalMicros', 'updatedAt'])
+                           )
+                         );
+
+        allow delete: if false;
+      }
+
+      // Immutable Rewarded Ad Completion History
+      match /ad_rewards/{rewardId} {
+        allow get: if isValidId(userId) && isValidId(rewardId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+
+        allow create: if isValidId(userId) &&
+                         isValidId(rewardId) &&
+                         isOwner(userId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'adUnitId', 'triggerSource', 'scannedCode', 'adValueMicros', 'userShareMicros', 'currencyCode', 'precisionType', 'rewardType', 'rewardAmount', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'adUnitId', 'triggerSource', 'scannedCode', 'adValueMicros', 'userShareMicros', 'currencyCode', 'precisionType', 'rewardType', 'rewardAmount', 'createdAt']) &&
+                         isValidRewardedAdCompletion(incoming()) &&
+                         getAfter(/databases/$(database)/documents/users/$(userId)/earnings/summary).data.availableMicros ==
+                           get(/databases/$(database)/documents/users/$(userId)/earnings/summary).data.availableMicros + incoming().userShareMicros &&
+                         getAfter(/databases/$(database)/documents/users/$(userId)/earnings/summary).data.lifetimeEarnedMicros ==
+                           get(/databases/$(database)/documents/users/$(userId)/earnings/summary).data.lifetimeEarnedMicros + incoming().userShareMicros &&
+                         getAfter(/databases/$(database)/documents/users/$(userId)/earnings/summary).data.adCompletionCount ==
+                           get(/databases/$(database)/documents/users/$(userId)/earnings/summary).data.adCompletionCount + 1;
 
         allow update, delete: if false;
       }
@@ -578,6 +704,40 @@ service cloud.firestore {
                        existing().status in ['PENDING', 'APPROVED'] &&
                        incoming().status in ['APPROVED', 'PAID', 'REJECTED'] &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNotes', 'reviewedBy', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // 9. Binance USDT BEP-20 Withdrawal Requests ($1.00 minimum)
+    match /withdrawal_requests/{requestId} {
+      allow get: if isValidId(requestId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(requestId) &&
+                       isSignedIn() &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       !('reviewedBy' in incoming()) &&
+                       !('adminNotes' in incoming()) &&
+                       !('txHash' in incoming()) &&
+                       incoming().keys().hasAll(['userId', 'userDisplayName', 'network', 'asset', 'walletAddress', 'amountMicros', 'status', 'requestedAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'userDisplayName', 'network', 'asset', 'walletAddress', 'amountMicros', 'status', 'requestedAt', 'updatedAt']) &&
+                       isValidWithdrawalRequest(incoming()) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)/earnings/summary).data.availableMicros >= 1000000 &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/earnings/summary).data.availableMicros ==
+                         get(/databases/$(database)/documents/users/$(request.auth.uid)/earnings/summary).data.availableMicros - incoming().amountMicros &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/earnings/summary).data.pendingWithdrawalMicros ==
+                         get(/databases/$(database)/documents/users/$(request.auth.uid)/earnings/summary).data.pendingWithdrawalMicros + incoming().amountMicros;
+      allow update: if isValidId(requestId) &&
+                       isAdmin() &&
+                       isValidWithdrawalRequest(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().requestedAt == existing().requestedAt &&
+                       incoming().amountMicros == existing().amountMicros &&
+                       incoming().walletAddress == existing().walletAddress &&
+                       incoming().network == existing().network &&
+                       incoming().asset == existing().asset &&
+                       existing().status in ['PENDING', 'APPROVED'] &&
+                       incoming().status in ['APPROVED', 'PAID', 'REJECTED'] &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNotes', 'reviewedBy', 'txHash', 'updatedAt']);
       allow delete: if false;
     }
   }

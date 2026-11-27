@@ -3,4 +3,5 @@
     <string name="app_name">SCAN2MONEY</string>
     <string name="admob_app_id" translatable="false">ca-app-pub-5802460072817241~2672172359</string>
     <string name="admob_banner_unit_id" translatable="false">ca-app-pub-5802460072817241/1598376798</string>
+    <string name="admob_rewarded_unit_id" translatable="false">ca-app-pub-5802460072817241/1598376798</string>
 </resources>

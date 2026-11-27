@@ -16,9 +16,11 @@ import com.example.data.remote.SimulatedRetailerPriceApi
 import com.example.domain.BarcodeValidationResult
 import com.example.domain.BarcodeValidator
 import com.example.domain.CampaignEligibilityEngine
+import com.example.domain.EarningsEngine
 import com.example.domain.MarketConfig
 import com.example.domain.QuestMissionEngine
 import com.example.domain.SupportedBarcodeFormat
+import com.example.domain.WithdrawalValidationResult
 import com.google.firebase.Timestamp
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -272,5 +274,67 @@ class DomainLogicUnitTest {
       wallet.availablePoints + wallet.redeemedPoints + wallet.reversedPoints,
     )
     assertEquals(420L, totalEarned)
+  }
+
+  @Test
+  fun earningsEngineCalculatesExactTenPercentShareAndFormatsUsd() {
+    assertEquals(0L, EarningsEngine.calculateTenPercentShareMicros(0L))
+    assertEquals(0L, EarningsEngine.calculateTenPercentShareMicros(-500L))
+    assertEquals(1L, EarningsEngine.calculateTenPercentShareMicros(15L))
+    assertEquals(50_000L, EarningsEngine.calculateTenPercentShareMicros(500_000L))
+    assertEquals(100_000L, EarningsEngine.calculateTenPercentShareMicros(1_000_000L))
+    assertEquals(EarningsEngine.MAX_SINGLE_AD_SHARE_MICROS, EarningsEngine.calculateTenPercentShareMicros(50_000_000L))
+
+    assertEquals("$0.00", EarningsEngine.formatUsdFromMicros(0L))
+    assertEquals("$0.05", EarningsEngine.formatUsdFromMicros(50_000L))
+    assertEquals("$1.00", EarningsEngine.formatUsdFromMicros(1_000_000L))
+    assertEquals("$1.2345", EarningsEngine.formatUsdFromMicros(1_234_500L))
+  }
+
+  @Test
+  fun earningsEngineValidatesBep20AddressAndOneDollarMinimumWithdrawal() {
+    val validAddress = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+    assertTrue(EarningsEngine.isValidBep20Address(validAddress))
+    assertFalse(EarningsEngine.isValidBep20Address("71C7656EC7ab88b098defB751B7401B5f6d8976F"))
+    assertFalse(EarningsEngine.isValidBep20Address("0x1234"))
+    assertFalse(EarningsEngine.isValidBep20Address("TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE")) // TRC20 rejected
+
+    val belowMinBalance = EarningsEngine.validateWithdrawal(
+      availableMicros = 990_000L, // $0.99
+      amountText = "1.00",
+      walletAddress = validAddress,
+    )
+    assertTrue(belowMinBalance is WithdrawalValidationResult.Invalid)
+
+    val badAddress = EarningsEngine.validateWithdrawal(
+      availableMicros = 2_500_000L,
+      amountText = "1.50",
+      walletAddress = "invalid-address",
+    )
+    assertTrue(badAddress is WithdrawalValidationResult.Invalid)
+
+    val belowMinRequest = EarningsEngine.validateWithdrawal(
+      availableMicros = 2_500_000L,
+      amountText = "0.50",
+      walletAddress = validAddress,
+    )
+    assertTrue(belowMinRequest is WithdrawalValidationResult.Invalid)
+
+    val exceedsBalance = EarningsEngine.validateWithdrawal(
+      availableMicros = 1_500_000L,
+      amountText = "2.00",
+      walletAddress = validAddress,
+    )
+    assertTrue(exceedsBalance is WithdrawalValidationResult.Invalid)
+
+    val valid = EarningsEngine.validateWithdrawal(
+      availableMicros = 1_500_000L,
+      amountText = "1.25",
+      walletAddress = "  $validAddress ",
+    )
+    assertTrue(valid is WithdrawalValidationResult.Valid)
+    val ok = valid as WithdrawalValidationResult.Valid
+    assertEquals(validAddress, ok.normalizedAddress)
+    assertEquals(1_250_000L, ok.amountMicros)
   }
 }

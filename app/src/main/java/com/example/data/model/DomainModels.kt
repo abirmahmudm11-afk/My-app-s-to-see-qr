@@ -334,6 +334,67 @@ data class PayoutRequest(
   val updatedAt: Timestamp? = null,
 )
 
+enum class WithdrawalStatus {
+  PENDING,
+  APPROVED,
+  PAID,
+  REJECTED;
+
+  companion object {
+    fun fromString(raw: String?): WithdrawalStatus =
+      entries.firstOrNull { it.name == raw } ?: PENDING
+  }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class EarningsWallet(
+  val id: String = "summary",
+  val userId: String = "",
+  val currencyCode: String = "USD",
+  val availableMicros: Long = 0L,
+  val lifetimeEarnedMicros: Long = 0L,
+  val pendingWithdrawalMicros: Long = 0L,
+  val withdrawnMicros: Long = 0L,
+  val adCompletionCount: Long = 0L,
+  val updatedAt: Timestamp? = null,
+)
+
+@Keep
+@IgnoreExtraProperties
+data class RewardedAdCompletion(
+  val id: String = "",
+  val userId: String = "",
+  val adUnitId: String = "",
+  val triggerSource: String = "QR_SCAN",
+  val scannedCode: String = "",
+  val adValueMicros: Long = 0L,
+  val userShareMicros: Long = 0L,
+  val currencyCode: String = "USD",
+  val precisionType: Int = 0,
+  val rewardType: String = "",
+  val rewardAmount: Int = 0,
+  val createdAt: Timestamp? = null,
+)
+
+@Keep
+@IgnoreExtraProperties
+data class WithdrawalRequest(
+  val id: String = "",
+  val userId: String = "",
+  val userDisplayName: String = "",
+  val network: String = "BEP20",
+  val asset: String = "USDT",
+  val walletAddress: String = "",
+  val amountMicros: Long = 0L,
+  val status: String = WithdrawalStatus.PENDING.name,
+  val adminNotes: String? = null,
+  val reviewedBy: String? = null,
+  val txHash: String? = null,
+  val requestedAt: Timestamp? = null,
+  val updatedAt: Timestamp? = null,
+)
+
 @Keep
 @IgnoreExtraProperties
 data class DeletionRequest(

@@ -77,6 +77,9 @@ import com.example.data.model.RewardWallet
 import com.example.data.model.TransactionStatus
 import com.example.data.model.TransactionType
 import com.example.data.model.UserProfile
+import com.example.data.model.WithdrawalRequest
+import com.example.data.model.WithdrawalStatus
+import com.example.domain.EarningsEngine
 import com.example.domain.MarketConfig
 import com.example.ui.components.AnimatedButton
 import com.example.ui.components.AnimatedIconButton
@@ -98,6 +101,7 @@ fun AdminConsoleScreen(
   uiState: MainUiState,
   onBack: () -> Unit,
   onReviewPayout: (PayoutRequest, PayoutStatus, String) -> Unit,
+  onReviewUsdtWithdrawal: (WithdrawalRequest, WithdrawalStatus, String, String) -> Unit = { _, _, _, _ -> },
   onUpdateUserStatus: (String, String, String) -> Unit,
   onCreditBonusPoints: (String, Long, String) -> Unit,
   onApproveReceipt: (ReceiptSubmission, Long) -> Unit,
@@ -117,6 +121,7 @@ fun AdminConsoleScreen(
   val firestoreDbId = remember(context) { context.getString(R.string.firestore_database_id) }
   val admobAppId = remember(context) { context.getString(R.string.admob_app_id) }
   val admobBannerId = remember(context) { context.getString(R.string.admob_banner_unit_id) }
+  val admobRewardedId = remember(context) { context.getString(R.string.admob_rewarded_unit_id) }
 
   var selectedTab by remember { mutableIntStateOf(0) }
   var userSearch by remember { mutableStateOf("") }
@@ -151,6 +156,8 @@ fun AdminConsoleScreen(
 
   val pendingPayoutsCount = uiState.allPayoutRequests.count {
     it.status == PayoutStatus.PENDING.name || it.status == PayoutStatus.APPROVED.name
+  } + uiState.allWithdrawalRequests.count {
+    it.status == WithdrawalStatus.PENDING.name || it.status == WithdrawalStatus.APPROVED.name
   }
 
   Column(
@@ -288,6 +295,7 @@ fun AdminConsoleScreen(
                     )
                     Text("AdMob App ID: $admobAppId", style = TabularDataStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("AdMob Banner Unit: $admobBannerId", style = TabularDataStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("AdMob Rewarded Unit: $admobRewardedId", style = TabularDataStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                   }
                 }
               }
@@ -370,6 +378,20 @@ fun AdminConsoleScreen(
             }
 
             2 -> {
+              item { SectionHeader("Binance USDT BEP-20 Withdrawals (${uiState.allWithdrawalRequests.size})") }
+              if (uiState.allWithdrawalRequests.isEmpty()) {
+                item {
+                  Text(
+                    text = "No Binance USDT BEP-20 withdrawals submitted yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+              } else {
+                items(uiState.allWithdrawalRequests, key = { it.id }) { req ->
+                  AdminUsdtWithdrawalCard(request = req, onReview = onReviewUsdtWithdrawal)
+                }
+              }
               item { SectionHeader("All Payout Requests (${uiState.allPayoutRequests.size})") }
               if (uiState.allPayoutRequests.isEmpty()) {
                 item {
@@ -1033,6 +1055,106 @@ private fun PendingReceiptAdminCard(
           Icon(Icons.Rounded.Check, contentDescription = null)
           Spacer(Modifier.width(4.dp))
           Text("Approve")
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun AdminUsdtWithdrawalCard(
+  request: WithdrawalRequest,
+  onReview: (WithdrawalRequest, WithdrawalStatus, String, String) -> Unit,
+) {
+  var noteInput by remember(request.id) { mutableStateOf(request.adminNotes.orEmpty()) }
+  var txHashInput by remember(request.id) { mutableStateOf(request.txHash.orEmpty()) }
+  val status = WithdrawalStatus.fromString(request.status)
+  val (bg, fg) = when (status) {
+    WithdrawalStatus.PAID, WithdrawalStatus.APPROVED -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.secondary
+    WithdrawalStatus.REJECTED -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.error
+    WithdrawalStatus.PENDING -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.tertiary
+  }
+
+  Surface(
+    shape = RoundedCornerShape(12.dp),
+    color = MaterialTheme.colorScheme.surface,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+  ) {
+    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = "${request.userDisplayName} · ${EarningsEngine.formatUsdFromMicros(request.amountMicros)} USDT",
+            style = MaterialTheme.typography.titleMedium,
+          )
+          Text(
+            text = "Network: ${request.network} (${request.asset})",
+            style = MaterialTheme.typography.bodySmall,
+          )
+        }
+        Surface(color = bg, shape = RoundedCornerShape(6.dp)) {
+          Text(
+            text = status.name,
+            style = MaterialTheme.typography.labelSmall,
+            color = fg,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+          )
+        }
+      }
+      Text(
+        text = "BEP-20 Address: ${request.walletAddress}",
+        style = TabularDataStyle,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Text(
+        text = "Requested: ${formatTimestamp(request.requestedAt)}",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+
+      if (status == WithdrawalStatus.PENDING || status == WithdrawalStatus.APPROVED) {
+        OutlinedTextField(
+          value = txHashInput,
+          onValueChange = { txHashInput = it },
+          label = { Text("BSC Transaction Hash (optional)") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+          value = noteInput,
+          onValueChange = { noteInput = it },
+          label = { Text("Admin note / reference") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          AnimatedOutlinedButton(
+            onClick = { onReview(request, WithdrawalStatus.REJECTED, noteInput, txHashInput) },
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+          ) {
+            Text("Reject", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+          }
+          if (status == WithdrawalStatus.PENDING) {
+            AnimatedOutlinedButton(
+              onClick = { onReview(request, WithdrawalStatus.APPROVED, noteInput, txHashInput) },
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(8.dp),
+            ) {
+              Text("Approve", style = MaterialTheme.typography.labelSmall)
+            }
+          }
+          AnimatedButton(
+            onClick = { onReview(request, WithdrawalStatus.PAID, noteInput, txHashInput) },
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+          ) {
+            Text("Mark Paid", style = MaterialTheme.typography.labelSmall)
+          }
         }
       }
     }

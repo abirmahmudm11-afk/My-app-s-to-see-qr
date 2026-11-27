@@ -72,6 +72,21 @@ class UserWalletRepository(
           ),
         ).await()
       }
+      val earningsRef = userRef.collection("earnings").document("summary")
+      if (!earningsRef.get().await().exists()) {
+        earningsRef.set(
+          hashMapOf(
+            "userId" to uid,
+            "currencyCode" to "USD",
+            "availableMicros" to 0L,
+            "lifetimeEarnedMicros" to 0L,
+            "pendingWithdrawalMicros" to 0L,
+            "withdrawnMicros" to 0L,
+            "adCompletionCount" to 0L,
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        ).await()
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {

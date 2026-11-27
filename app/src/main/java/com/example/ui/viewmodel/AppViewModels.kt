@@ -12,16 +12,21 @@ import com.example.data.model.Campaign
 import com.example.data.model.CampaignStatus
 import com.example.data.model.CatalogProduct
 import com.example.data.model.DeletionRequest
+import com.example.data.model.EarningsWallet
 import com.example.data.model.PayoutMethod
 import com.example.data.model.PayoutRequest
 import com.example.data.model.PayoutStatus
 import com.example.data.model.ReceiptSubmission
 import com.example.data.model.RewardTransaction
 import com.example.data.model.RewardWallet
+import com.example.data.model.RewardedAdCompletion
 import com.example.data.model.ScanContext
 import com.example.data.model.ScanRecord
 import com.example.data.model.UserProfile
+import com.example.data.model.WithdrawalRequest
+import com.example.data.model.WithdrawalStatus
 import com.example.di.AppContainer
+import com.example.domain.EarningsEngine
 import com.example.domain.MarketConfig
 import com.example.domain.QuestMissionEngine
 import com.example.domain.ShopperMission
@@ -48,6 +53,9 @@ data class MainUiState(
   val preferences: AppPreferences = AppPreferences(),
   val userProfile: UserProfile? = null,
   val wallet: RewardWallet = RewardWallet(),
+  val earningsWallet: EarningsWallet = EarningsWallet(),
+  val adRewards: List<RewardedAdCompletion> = emptyList(),
+  val withdrawalRequests: List<WithdrawalRequest> = emptyList(),
   val transactions: List<RewardTransaction> = emptyList(),
   val receipts: List<ReceiptSubmission> = emptyList(),
   val payoutRequests: List<PayoutRequest> = emptyList(),
@@ -60,6 +68,7 @@ data class MainUiState(
   val adminRole: AdminRole? = null,
   val allUsers: List<UserProfile> = emptyList(),
   val allPayoutRequests: List<PayoutRequest> = emptyList(),
+  val allWithdrawalRequests: List<WithdrawalRequest> = emptyList(),
   val pendingReceipts: List<ReceiptSubmission> = emptyList(),
   val allReceipts: List<ReceiptSubmission> = emptyList(),
   val allCampaigns: List<Campaign> = emptyList(),
@@ -81,6 +90,7 @@ private data class CoreSessionData(
   val profile: UserProfile?,
   val wallet: RewardWallet,
   val transactions: List<RewardTransaction>,
+  val earningsWallet: EarningsWallet,
 )
 
 private data class SecondarySessionData(
@@ -91,12 +101,15 @@ private data class SecondarySessionData(
   val cloudScans: List<ScanRecord>,
   val localScans: List<ScanRecord>,
   val cachedCatalog: List<CatalogProduct>,
+  val adRewards: List<RewardedAdCompletion>,
+  val withdrawalRequests: List<WithdrawalRequest>,
 )
 
 private data class AdminSessionData(
   val role: AdminRole?,
   val allUsers: List<UserProfile>,
   val allPayoutRequests: List<PayoutRequest>,
+  val allWithdrawalRequests: List<WithdrawalRequest>,
   val pendingReceipts: List<ReceiptSubmission>,
   val allReceipts: List<ReceiptSubmission>,
   val allCampaigns: List<Campaign>,
@@ -137,6 +150,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
             languageCode = prefs.languageCode,
             darkThemeEnabled = prefs.darkThemeEnabled,
           )
+          container.earningsRepository.ensureEarningsInitialized(user.uid)
         }
         adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
       }
@@ -161,6 +175,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
             languageCode = prefs.languageCode,
             darkThemeEnabled = prefs.darkThemeEnabled,
           )
+          container.earningsRepository.ensureEarningsInitialized(existing.uid)
         }
         adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
       }
@@ -177,17 +192,38 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
   private val coreFlow = authUserFlow.flatMapLatest { user ->
     if (user == null) {
       combine(authUserFlow, nullablePrefsState) { u, prefs ->
-        CoreSessionData(u, prefs != null, prefs ?: AppPreferences(), null, RewardWallet(), emptyList())
+        CoreSessionData(
+          user = u,
+          prefsLoaded = prefs != null,
+          prefs = prefs ?: AppPreferences(),
+          profile = null,
+          wallet = RewardWallet(),
+          transactions = emptyList(),
+          earningsWallet = EarningsWallet(),
+        )
       }
     } else {
       combine(
-        authUserFlow,
-        nullablePrefsState,
-        container.userWalletRepository.observeUserProfile(user.uid).safeOr(null),
-        container.userWalletRepository.observeWallet(user.uid).safeOr(RewardWallet(userId = user.uid)),
-        container.userWalletRepository.observeTransactions(user.uid).safeOr(emptyList()),
-      ) { u, prefs, profile, wallet, txs ->
-        CoreSessionData(u, prefs != null, prefs ?: AppPreferences(), profile, wallet, txs)
+        combine(
+          authUserFlow,
+          nullablePrefsState,
+          container.userWalletRepository.observeUserProfile(user.uid).safeOr(null),
+        ) { u, prefs, profile -> Triple(u, prefs, profile) },
+        combine(
+          container.userWalletRepository.observeWallet(user.uid).safeOr(RewardWallet(userId = user.uid)),
+          container.userWalletRepository.observeTransactions(user.uid).safeOr(emptyList()),
+          container.earningsRepository.observeEarningsWallet(user.uid).safeOr(EarningsWallet(userId = user.uid)),
+        ) { wallet, txs, earnings -> Triple(wallet, txs, earnings) },
+      ) { left, right ->
+        CoreSessionData(
+          user = left.first,
+          prefsLoaded = left.second != null,
+          prefs = left.second ?: AppPreferences(),
+          profile = left.third,
+          wallet = right.first,
+          transactions = right.second,
+          earningsWallet = right.third,
+        )
       }
     }
   }
@@ -205,6 +241,8 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
           cloudScans = emptyList(),
           localScans = localScans,
           cachedCatalog = catalog,
+          adRewards = emptyList(),
+          withdrawalRequests = emptyList(),
         )
       }
     } else {
@@ -221,7 +259,11 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
           container.userWalletRepository.observeCloudScans(user.uid).safeOr(emptyList()),
           localScansFlow,
           catalogFlow,
-        ) { cloudScans, localScans, catalog -> Triple(cloudScans, localScans, catalog) },
+          container.earningsRepository.observeRewardedAdCompletions(user.uid).safeOr(emptyList()),
+          container.earningsRepository.observeUserWithdrawals(user.uid).safeOr(emptyList()),
+        ) { cloudScans, localScans, catalog, adRewards, withdrawals ->
+          arrayOf(cloudScans, localScans, catalog, adRewards, withdrawals)
+        },
       ) { first, second ->
         @Suppress("UNCHECKED_CAST")
         SecondarySessionData(
@@ -229,9 +271,11 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
           payoutRequests = first[1] as List<PayoutRequest>,
           notifications = first[2] as List<AppNotification>,
           campaigns = first[3] as List<Campaign>,
-          cloudScans = second.first,
-          localScans = second.second,
-          cachedCatalog = second.third,
+          cloudScans = second[0] as List<ScanRecord>,
+          localScans = second[1] as List<ScanRecord>,
+          cachedCatalog = second[2] as List<CatalogProduct>,
+          adRewards = second[3] as List<RewardedAdCompletion>,
+          withdrawalRequests = second[4] as List<WithdrawalRequest>,
         )
       }
     }
@@ -244,6 +288,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
           role = null,
           allUsers = emptyList(),
           allPayoutRequests = emptyList(),
+          allWithdrawalRequests = emptyList(),
           pendingReceipts = emptyList(),
           allReceipts = emptyList(),
           allCampaigns = emptyList(),
@@ -257,9 +302,10 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
         combine(
           container.adminRepository.observeAllUsers().safeOr(emptyList()),
           container.adminRepository.observeAllPayoutRequests().safeOr(emptyList()),
+          container.adminRepository.observeAllWithdrawalRequests().safeOr(emptyList()),
           container.adminRepository.observePendingReceipts().safeOr(emptyList()),
           container.adminRepository.observeAllReceipts().safeOr(emptyList()),
-        ) { users, payouts, pendingR, allR -> arrayOf(users, payouts, pendingR, allR) },
+        ) { users, payouts, withdrawals, pendingR, allR -> arrayOf(users, payouts, withdrawals, pendingR, allR) },
         combine(
           container.adminRepository.observeAllCampaigns().safeOr(emptyList()),
           container.adminRepository.observeUnverifiedCatalog().safeOr(emptyList()),
@@ -272,8 +318,9 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
           role = role,
           allUsers = a[0] as List<UserProfile>,
           allPayoutRequests = a[1] as List<PayoutRequest>,
-          pendingReceipts = a[2] as List<ReceiptSubmission>,
-          allReceipts = a[3] as List<ReceiptSubmission>,
+          allWithdrawalRequests = a[2] as List<WithdrawalRequest>,
+          pendingReceipts = a[3] as List<ReceiptSubmission>,
+          allReceipts = a[4] as List<ReceiptSubmission>,
           allCampaigns = b[0] as List<Campaign>,
           unverifiedCatalog = b[1] as List<CatalogProduct>,
           deletionRequests = b[2] as List<DeletionRequest>,
@@ -323,6 +370,9 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
       preferences = core.prefs,
       userProfile = core.profile,
       wallet = core.wallet,
+      earningsWallet = core.earningsWallet,
+      adRewards = sec.adRewards,
+      withdrawalRequests = sec.withdrawalRequests,
       transactions = core.transactions,
       receipts = sec.receipts,
       payoutRequests = sec.payoutRequests,
@@ -335,6 +385,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
       adminRole = admin.role,
       allUsers = admin.allUsers,
       allPayoutRequests = admin.allPayoutRequests,
+      allWithdrawalRequests = admin.allWithdrawalRequests,
       pendingReceipts = admin.pendingReceipts,
       allReceipts = admin.allReceipts,
       allCampaigns = admin.allCampaigns,
@@ -421,6 +472,7 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
         languageCode = prefs.languageCode,
         darkThemeEnabled = prefs.darkThemeEnabled,
       )
+      container.earningsRepository.ensureEarningsInitialized(user.uid)
     }
     adminRoleFlow.value = runCatching { container.adminRepository.resolveAdminRole() }.getOrNull()
     feedbackMessageFlow.value = message
@@ -625,12 +677,89 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
     }
   }
 
+  fun recordRewardedAdCompletion(
+    adUnitId: String,
+    triggerSource: String,
+    scannedCode: String,
+    adValueMicros: Long,
+    currencyCode: String,
+    precisionType: Int,
+    rewardType: String,
+    rewardAmount: Int,
+  ) {
+    viewModelScope.launch {
+      val result = container.earningsRepository.recordRewardedAdCompletion(
+        adUnitId = adUnitId,
+        triggerSource = triggerSource,
+        scannedCode = scannedCode,
+        adValueMicros = adValueMicros,
+        currencyCode = currencyCode,
+        precisionType = precisionType,
+        rewardType = rewardType,
+        rewardAmount = rewardAmount,
+      )
+      result.onSuccess { reward ->
+        val shareText = EarningsEngine.formatUsdFromMicros(reward.userShareMicros)
+        val totalText = EarningsEngine.formatUsdFromMicros(reward.adValueMicros)
+        feedbackMessageFlow.value = "Ad completed! Credited +$shareText (10% of $totalText ad value)."
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Unable to record ad completion reward."
+      }
+    }
+  }
+
+  fun submitUsdtWithdrawal(
+    walletAddress: String,
+    amountMicros: Long,
+    onSuccess: () -> Unit = {},
+  ) {
+    viewModelScope.launch {
+      val name = uiState.value.userProfile?.displayName
+        ?: uiState.value.firebaseUser?.displayName
+        ?: "Shopper"
+      val result = container.earningsRepository.submitUsdtWithdrawal(
+        walletAddress = walletAddress,
+        amountMicros = amountMicros,
+        userDisplayName = name,
+      )
+      result.onSuccess { req ->
+        val formatted = EarningsEngine.formatUsdFromMicros(req.amountMicros)
+        feedbackMessageFlow.value = "Binance USDT BEP-20 withdrawal ($formatted) submitted for review."
+        onSuccess()
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "Could not submit USDT withdrawal."
+      }
+    }
+  }
+
   // --- Admin Governance Actions ---
   fun reviewPayoutRequest(request: PayoutRequest, newStatus: PayoutStatus, adminNotes: String) {
     viewModelScope.launch {
       runCatching { container.adminRepository.reviewPayoutRequest(request, newStatus, adminNotes) }
         .onSuccess { feedbackMessageFlow.value = "Payout marked ${newStatus.name}." }
         .onFailure { feedbackMessageFlow.value = it.message ?: "Payout update failed." }
+    }
+  }
+
+  fun reviewUsdtWithdrawal(
+    request: WithdrawalRequest,
+    newStatus: WithdrawalStatus,
+    adminNotes: String,
+    txHash: String,
+  ) {
+    viewModelScope.launch {
+      runCatching {
+        container.adminRepository.reviewWithdrawalRequest(
+          request = request,
+          newStatus = newStatus,
+          adminNotes = adminNotes,
+          txHash = txHash,
+        )
+      }.onSuccess {
+        feedbackMessageFlow.value = "USDT BEP-20 withdrawal marked ${newStatus.name}."
+      }.onFailure { err ->
+        feedbackMessageFlow.value = err.message ?: "USDT withdrawal update failed."
+      }
     }
   }
 

@@ -34,14 +34,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Paid
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Paid
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.CircularProgressIndicator
@@ -87,11 +87,13 @@ import androidx.navigation.navArgument
 import com.example.di.AppContainer
 import com.example.domain.BarcodeValidator
 import com.example.domain.SupportedBarcodeFormat
+import com.example.ui.components.rememberRewardedAdController
 import com.example.ui.navigation.Routes
 import com.example.ui.screens.AdminConsoleScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CountryLanguageScreen
 import com.example.ui.screens.DiscoverScreen
+import com.example.ui.screens.EarningsScreen
 import com.example.ui.screens.HelpSupportScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.NotificationsScreen
@@ -155,6 +157,37 @@ private fun Scan2MoneyRoot(container: AppContainer) {
   val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
   val snackbarHostState = remember { SnackbarHostState() }
   var forceAuthModal by remember { mutableStateOf(false) }
+
+  val rewardedAdController = rememberRewardedAdController()
+  val rewardedAdLoadState by rewardedAdController.loadState.collectAsStateWithLifecycle()
+
+  val launchRewardedAd: (triggerSource: String, scannedCode: String) -> Unit = { source, code ->
+    if (uiState.firebaseUser == null) {
+      mainViewModel.showFeedback("Sign in with Google to save your 10% ad earnings to your balance.")
+      forceAuthModal = true
+    } else {
+      rewardedAdController.showRewardedAd(
+        activityContext = activityContext,
+        triggerSource = source,
+        scannedCode = code,
+        onRewardCompleted = { result ->
+          mainViewModel.recordRewardedAdCompletion(
+            adUnitId = result.adUnitId,
+            triggerSource = result.triggerSource,
+            scannedCode = result.scannedCode,
+            adValueMicros = result.adValueMicros,
+            currencyCode = result.currencyCode,
+            precisionType = result.precisionType,
+            rewardType = result.rewardType,
+            rewardAmount = result.rewardAmount,
+          )
+        },
+        onUnavailableOrDismissed = { reason ->
+          mainViewModel.showFeedback(reason)
+        },
+      )
+    }
+  }
 
   LaunchedEffect(uiState.preferencesLoaded) {
     if (uiState.preferencesLoaded) {
@@ -287,14 +320,15 @@ private fun Scan2MoneyRoot(container: AppContainer) {
               listOf(
                 NavDestinationTab(Routes.HOME, "Home", Icons.Rounded.Home, Icons.Outlined.Home),
                 NavDestinationTab(Routes.SCAN, "Scan", Icons.Rounded.QrCodeScanner, Icons.Outlined.QrCodeScanner),
+                NavDestinationTab(Routes.EARNINGS, "Earnings", Icons.Rounded.Paid, Icons.Outlined.Paid),
                 NavDestinationTab(Routes.SCAN_HISTORY, "History", Icons.Rounded.History, Icons.Outlined.History),
-                NavDestinationTab(Routes.REWARDS, "Rewards", Icons.Rounded.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
                 NavDestinationTab(Routes.PROFILE, "Profile", Icons.Rounded.Person, Icons.Outlined.Person),
               )
             }
             val topLevelRoutes = remember { tabs.map { it.route }.toSet() }
             val showTopNavigation = currentRoute in topLevelRoutes ||
               currentRoute == Routes.DISCOVER ||
+              currentRoute == Routes.REWARDS ||
               currentRoute == Routes.ADMIN_CONSOLE
 
             val navigateTopLevel: (String) -> Unit = { route ->
@@ -394,6 +428,8 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                                 navigateTopLevel(Routes.SCAN)
                               },
                               onOpenDiscover = { navigateTopLevel(Routes.DISCOVER) },
+                              onOpenEarnings = { navigateTopLevel(Routes.EARNINGS) },
+                              onWatchRewardedAd = { launchRewardedAd("EARNINGS_BONUS", "") },
                               onOpenRewards = { navigateTopLevel(Routes.REWARDS) },
                               onOpenReceiptSubmit = { campId -> navController.navigate(Routes.receiptSubmit(campId)) },
                               onOpenProduct = { barcode -> navController.navigate(Routes.productDetail(barcode)) },
@@ -425,9 +461,12 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                             scannerViewModel = scannerViewModel,
                             scanContext = uiState.activeScanContext,
                             reducedMotion = uiState.preferences.reducedMotionEnabled,
+                            earningsBalanceMicros = uiState.earningsWallet.availableMicros,
+                            adLoadState = rewardedAdLoadState,
                             onClearScanContext = { mainViewModel.clearScanContext() },
                             onOpenProductDetail = { barcode -> navController.navigate(Routes.productDetail(barcode)) },
                             onOpenHistory = { navigateTopLevel(Routes.SCAN_HISTORY) },
+                            onOpenEarnings = { navigateTopLevel(Routes.EARNINGS) },
                             onOpenRewardsOrPromo = { campHint ->
                               if (!campHint.isNullOrBlank()) {
                                 navController.navigate(Routes.receiptSubmit(campHint))
@@ -435,7 +474,24 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                                 navigateTopLevel(Routes.REWARDS)
                               }
                             },
+                            onWatchRewardedAdForScan = { triggerSource, scannedCode ->
+                              launchRewardedAd(triggerSource, scannedCode)
+                            },
                             onShowMessage = { msg -> mainViewModel.showFeedback(msg) },
+                          )
+                        }
+
+                        composable(Routes.EARNINGS) {
+                          EarningsScreen(
+                            uiState = uiState,
+                            adLoadState = rewardedAdLoadState,
+                            onWatchRewardedAd = { launchRewardedAd("EARNINGS_BONUS", "") },
+                            onOpenScan = { navigateTopLevel(Routes.SCAN) },
+                            onOpenRewards = { navController.navigate(Routes.REWARDS) },
+                            onRequestWithdrawal = { address, amountMicros ->
+                              mainViewModel.submitUsdtWithdrawal(address, amountMicros)
+                            },
+                            onSignInRequested = { forceAuthModal = true },
                           )
                         }
 
@@ -623,6 +679,9 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                             uiState = uiState,
                             onBack = { navController.popBackStack() },
                             onReviewPayout = { req, status, notes -> mainViewModel.reviewPayoutRequest(req, status, notes) },
+                            onReviewUsdtWithdrawal = { req, status, notes, txHash ->
+                              mainViewModel.reviewUsdtWithdrawal(req, status, notes, txHash)
+                            },
                             onUpdateUserStatus = { uid, status, reason -> mainViewModel.updateUserAccountStatus(uid, status, reason) },
                             onCreditBonusPoints = { uid, pts, reason -> mainViewModel.adminCreditBonusPoints(uid, pts, reason) },
                             onApproveReceipt = { r, pts -> mainViewModel.approveReceipt(r, pts) },
