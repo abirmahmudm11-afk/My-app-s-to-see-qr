@@ -7,7 +7,6 @@ import com.example.data.local.AppPreferencesDataStore
 import com.example.data.local.LocalCacheDatabase
 import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.remote.OpenPricesApi
-import com.example.data.remote.SimulatedRetailerPriceApi
 import com.example.data.repository.AdminRepository
 import com.example.data.repository.EarningsRepository
 import com.example.data.repository.ProductRepository
@@ -74,8 +73,6 @@ class AppContainer(context: Context) {
     .build()
     .create(OpenPricesApi::class.java)
 
-  private val simulatedRetailerPriceApi = SimulatedRetailerPriceApi()
-
   val credentialAuth = CredentialManagerAuth(auth)
   val scanHistoryRepository = ScanHistoryRepository(localDatabase.scanHistoryDao())
   val productRepository = ProductRepository(
@@ -84,7 +81,6 @@ class AppContainer(context: Context) {
     api = openFoodFactsApi,
     openPricesApi = openPricesApi,
     cachedProductDao = localDatabase.cachedProductDao(),
-    simulatedRetailerPriceApi = simulatedRetailerPriceApi,
   )
   val userWalletRepository = UserWalletRepository(
     db = firestore,

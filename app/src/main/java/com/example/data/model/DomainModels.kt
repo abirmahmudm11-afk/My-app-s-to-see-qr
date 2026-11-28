@@ -296,8 +296,8 @@ data class AuditLog(
 
 enum class PayoutMethod(val label: String) {
   GIFT_VOUCHER("Gift Voucher"),
-  PAYPAL_SANDBOX("PayPal Sandbox"),
-  BANK_SANDBOX("Bank Transfer Sandbox");
+  PAYPAL_SANDBOX("PayPal"),
+  BANK_SANDBOX("Bank Transfer");
 
   companion object {
     fun fromString(raw: String?): PayoutMethod =

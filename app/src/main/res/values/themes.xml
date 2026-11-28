@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.SCAN2MONEY" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/deep_obsidian</item>
+    <style name="Theme.SCAN2MONEY" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/mint_alabaster</item>
     </style>
 </resources>

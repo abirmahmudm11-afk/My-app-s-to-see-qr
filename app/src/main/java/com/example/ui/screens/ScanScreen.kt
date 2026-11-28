@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Size
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +38,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +53,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -67,7 +72,6 @@ import androidx.compose.material.icons.rounded.Paid
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -98,6 +102,7 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -297,6 +302,7 @@ fun ScanScreen(
     }
   }
 
+  Box(modifier = Modifier.fillMaxSize()) {
   Column(
     modifier = Modifier
       .fillMaxSize()
@@ -682,7 +688,7 @@ fun ScanScreen(
           border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
         ) {
           Text(
-            text = "Align barcode in frame, or select a photo or sample below.",
+            text = "Align any barcode or QR code in frame, pick a photo, or enter a GTIN.",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -1026,7 +1032,7 @@ fun ScanScreen(
       }
     }
 
-    // Bottom Action Bar + Sample Test Barcodes
+    // Bottom Action Bar
     Column(
       modifier = Modifier
         .fillMaxWidth()
@@ -1071,54 +1077,54 @@ fun ScanScreen(
           Text("Scan Photo", color = Color.White)
         }
       }
-
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text("Sample:", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-        val sampleSpecs = listOf(
-          Triple("3017620422003", "Nutella", SupportedBarcodeFormat.EAN_13),
-          Triple("https://world.openfoodfacts.org/product/5449000000996", "QR URL", SupportedBarcodeFormat.QR_CODE),
-          Triple("PROMO:BONUS100", "QR Promo", SupportedBarcodeFormat.QR_CODE),
-        )
-        sampleSpecs.forEach { (code, label, fmt) ->
-          Surface(
-            modifier = Modifier
-              .clip(RoundedCornerShape(999.dp))
-              .bounceClickable {
-                scannerViewModel.processScannedBarcode(code, fmt, fromCamera = false)
-              }
-              .testTag("sample_scan_$label"),
-            color = ViewfinderSurface,
-            shape = RoundedCornerShape(999.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-          ) {
-            Text(
-              text = label,
-              style = MaterialTheme.typography.labelSmall,
-              color = Color.White,
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            )
-          }
-        }
-      }
     }
   }
 
   if (showManualDialog) {
-    AlertDialog(
-      onDismissRequest = {
-        manualError = null
-        showManualDialog = false
-      },
-      title = { Text("Enter Barcode / GTIN") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    BackHandler {
+      manualError = null
+      showManualDialog = false
+    }
+    Box(
+      modifier = Modifier.fillMaxSize(),
+      contentAlignment = Alignment.Center,
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color.Black.copy(alpha = 0.62f))
+          .clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+          ) {
+            manualError = null
+            showManualDialog = false
+          },
+      )
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(24.dp)
+          .widthIn(max = 420.dp)
+          .pointerInput(Unit) { detectTapGestures {} },
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        tonalElevation = 6.dp,
+      ) {
+        Column(
+          modifier = Modifier.padding(22.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
           Text(
-            "Supports EAN-13, EAN-8, UPC-A, UPC-E (with Modulo-10 check), Code 128, or QR.",
+            text = "Enter Barcode / GTIN",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+            text = "Supports EAN-13, EAN-8, UPC-A, UPC-E (with Modulo-10 check), Code 128, or QR.",
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           OutlinedTextField(
             value = manualCode,
@@ -1142,38 +1148,44 @@ fun ScanScreen(
               modifier = Modifier.testTag("manual_barcode_error"),
             )
           }
-        }
-      },
-      confirmButton = {
-        AnimatedButton(
-          onClick = {
-            val trimmed = manualCode.trim()
-            if (trimmed.isEmpty()) {
-              manualError = "Enter a barcode or QR value first."
-              return@AnimatedButton
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            AnimatedTextButton(
+              onClick = {
+                manualError = null
+                showManualDialog = false
+              },
+            ) {
+              Text("Cancel")
             }
-            manualError = null
-            showManualDialog = false
-            scannerViewModel.processScannedBarcode(
-              rawValue = trimmed,
-              format = SupportedBarcodeFormat.MANUAL,
-              fromCamera = false,
-            )
-          },
-          modifier = Modifier.testTag("manual_barcode_submit_button"),
-        ) {
-          Text("Look Up")
+            Spacer(Modifier.width(8.dp))
+            AnimatedButton(
+              onClick = {
+                val trimmed = manualCode.trim()
+                if (trimmed.isEmpty()) {
+                  manualError = "Enter a barcode or QR value first."
+                  return@AnimatedButton
+                }
+                manualError = null
+                showManualDialog = false
+                scannerViewModel.processScannedBarcode(
+                  rawValue = trimmed,
+                  format = SupportedBarcodeFormat.MANUAL,
+                  fromCamera = false,
+                )
+              },
+              modifier = Modifier.testTag("manual_barcode_submit_button"),
+            ) {
+              Text("Look Up")
+            }
+          }
         }
-      },
-      dismissButton = {
-        AnimatedTextButton(
-          onClick = {
-            manualError = null
-            showManualDialog = false
-          },
-        ) { Text("Cancel") }
-      },
-    )
+      }
+    }
+  }
   }
 }
 

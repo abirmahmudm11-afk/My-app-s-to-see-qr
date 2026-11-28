@@ -239,7 +239,7 @@ class AppUiRobolectricTest {
   }
 
   @Test
-  fun scanScreenManualDialogValidatesEmptyInputAndSamplePromoWorks() {
+  fun scanScreenManualDialogValidatesEmptyInputAndPromoWorks() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val container = AppContainer(context)
     val scannerViewModel = ScannerViewModel(container)
@@ -247,7 +247,7 @@ class AppUiRobolectricTest {
     var watchedSource: String? = null
     var watchedCode: String? = null
     composeTestRule.setContent {
-      Scan2MoneyTheme(darkTheme = true, reducedMotion = true) {
+      Scan2MoneyTheme(darkTheme = false, reducedMotion = true) {
         ScanScreen(
           scannerViewModel = scannerViewModel,
           scanContext = null,
@@ -267,11 +267,19 @@ class AppUiRobolectricTest {
 
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("enable_camera_button").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("scanner_manual_entry_button").assertIsDisplayed()
-    composeTestRule.onNodeWithTag("scanner_photo_button").assertIsDisplayed()
-
-    composeTestRule.onNodeWithTag("sample_scan_QR Promo").performClick()
+    composeTestRule.onNodeWithTag("scanner_manual_entry_button").assertIsDisplayed().performClick()
     composeTestRule.waitForIdle()
+
+    composeTestRule.onNodeWithTag("manual_barcode_submit_button").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("manual_barcode_error")
+      .assertIsDisplayed()
+      .assertTextContains("Enter a barcode or QR value first.")
+
+    composeTestRule.onNodeWithTag("manual_barcode_input").performTextInput("PROMO:BONUS100")
+    composeTestRule.onNodeWithTag("manual_barcode_submit_button").performClick()
+    composeTestRule.waitForIdle()
+
     composeTestRule.onNodeWithText("Promo Code Detected").assertIsDisplayed()
     composeTestRule.onNodeWithText("Code: BONUS100").assertIsDisplayed()
     composeTestRule.onNodeWithTag("scanner_watch_rewarded_ad_button").assertIsDisplayed().performClick()
@@ -474,5 +482,135 @@ class AppUiRobolectricTest {
 
     assertEquals(validAddress, submittedAddress)
     assertEquals(1_500_000L, submittedAmountMicros)
+  }
+
+  @Test
+  fun lightModeRendersHomeAndEarningsWithExtendedLightColors() {
+    var observedDarkFlag: Boolean? = null
+    val state = MainUiState(
+      earningsWallet = EarningsWallet(availableMicros = 2_100_000L),
+    )
+
+    composeTestRule.setContent {
+      Scan2MoneyTheme(darkTheme = false, reducedMotion = true) {
+        observedDarkFlag = com.example.ui.theme.LocalExtendedColors.current.isDark
+        com.example.ui.screens.HomeScreen(
+          uiState = state,
+          onOpenScan = {},
+          onRescan = {},
+          onOpenDiscover = {},
+          onOpenEarnings = {},
+          onWatchRewardedAd = {},
+          onOpenRewards = {},
+          onOpenReceiptSubmit = {},
+          onOpenProduct = {},
+          onOpenNotifications = {},
+          onOpenScanHistory = {},
+          onOpenAdmin = {},
+          onSignInRequested = {},
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    assertEquals(false, observedDarkFlag)
+    composeTestRule.onNodeWithTag("home_earnings_balance_value")
+      .assertIsDisplayed()
+      .assertTextContains("$2.10")
+    composeTestRule.onNodeWithTag("home_scan_item_button").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("home_open_earnings_button").assertIsDisplayed()
+  }
+
+  @Test
+  fun onboardingScreenRendersCompactWhiteModeByDefault() {
+    var darkModeActive: Boolean? = null
+    var completedCountry: String? = null
+
+    composeTestRule.setContent {
+      Scan2MoneyTheme(reducedMotion = true) {
+        darkModeActive = com.example.ui.theme.LocalExtendedColors.current.isDark
+        com.example.ui.screens.OnboardingScreen(
+          selectedCountryCode = "US",
+          reducedMotion = true,
+          onComplete = { completedCountry = it },
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    assertEquals(false, darkModeActive)
+    composeTestRule.onNodeWithText("Live Barcode & QR Radar").assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("onboarding_step_tab_1").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithText("10% Share on Every Ad").assertIsDisplayed()
+
+    composeTestRule.onNodeWithTag("onboarding_market_GB").performScrollTo().performClick()
+    composeTestRule.waitForIdle()
+
+    composeTestRule.onNodeWithTag("onboarding_continue_button").performScrollTo().performClick()
+    composeTestRule.waitForIdle()
+    assertEquals("GB", completedCountry)
+  }
+
+  @Test
+  fun authScreenTriggersGoogleSignInAndGuestMode() {
+    var googleClicked = false
+    var guestClicked = false
+
+    composeTestRule.setContent {
+      Scan2MoneyTheme(reducedMotion = true) {
+        com.example.ui.screens.AuthScreen(
+          isSigningIn = false,
+          onGoogleSignIn = { googleClicked = true },
+          onContinueGuest = { guestClicked = true },
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithText("Protected by Google Sign-In").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("google_sign_in_button").performScrollTo().performClick()
+    composeTestRule.waitForIdle()
+    assertTrue(googleClicked)
+
+    composeTestRule.onNodeWithTag("continue_guest_button").performScrollTo().performClick()
+    composeTestRule.waitForIdle()
+    assertTrue(guestClicked)
+  }
+
+  @Test
+  fun profileScreenTogglesDarkAppearanceSwitch() {
+    var toggledTo: Boolean? = null
+    val lightState = MainUiState(
+      preferences = com.example.data.model.AppPreferences(darkThemeEnabled = false),
+    )
+
+    composeTestRule.setContent {
+      Scan2MoneyTheme(darkTheme = false, reducedMotion = true) {
+        com.example.ui.screens.ProfileScreen(
+          uiState = lightState,
+          onOpenScanHistory = {},
+          onOpenNotifications = {},
+          onOpenCountryLanguage = {},
+          onOpenPrivacy = {},
+          onOpenTerms = {},
+          onOpenHelp = {},
+          onOpenAdmin = {},
+          onToggleDarkTheme = { toggledTo = it },
+          onToggleReducedMotion = {},
+          onSignIn = {},
+          onSignOut = {},
+        )
+      }
+    }
+
+    composeTestRule.waitForIdle()
+    composeTestRule.onNode(hasScrollToNodeAction())
+      .performScrollToNode(hasTestTag("profile_dark_theme_switch"))
+    composeTestRule.onNodeWithText("Clean white light theme").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("profile_dark_theme_switch").performClick()
+    composeTestRule.waitForIdle()
+    assertEquals(true, toggledTo)
   }
 }

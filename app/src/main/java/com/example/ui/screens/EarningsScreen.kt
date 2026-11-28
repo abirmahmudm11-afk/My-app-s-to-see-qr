@@ -74,16 +74,9 @@ import com.example.ui.components.RewardedAdLoadState
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.formatTimestamp
-import com.example.ui.theme.HeroMintVaultBrush
-import com.example.ui.theme.LedgerJadeDark
-import com.example.ui.theme.MintGlowBorderBrush
-import com.example.ui.theme.MintOnDarkText
-import com.example.ui.theme.PrecisionAmberDark
-import com.example.ui.theme.ReticleAmber
-import com.example.ui.theme.SignalIndigoDark
+import com.example.ui.theme.LocalExtendedColors
 import com.example.ui.theme.TabularDataStyle
 import com.example.ui.theme.TabularFigureLargeStyle
-import com.example.ui.theme.ViewfinderMuted
 import com.example.ui.viewmodel.MainUiState
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -101,6 +94,7 @@ fun EarningsScreen(
 ) {
   val wallet = uiState.earningsWallet
   val reducedMotion = uiState.preferences.reducedMotionEnabled
+  val extended = LocalExtendedColors.current
   val canWithdraw = wallet.availableMicros >= EarningsEngine.MIN_PAYOUT_MICROS
   val thresholdProgress by animateFloatAsState(
     targetValue = EarningsEngine.thresholdProgressFraction(wallet.availableMicros),
@@ -161,16 +155,16 @@ fun EarningsScreen(
         Surface(
           shape = RoundedCornerShape(24.dp),
           color = Color.Transparent,
-          border = BorderStroke(0.9.dp, MintGlowBorderBrush),
+          border = BorderStroke(1.dp, extended.heroBorderBrush),
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .background(HeroMintVaultBrush)
+              .background(extended.heroBrush)
               .drawBehind {
                 drawCircle(
                   brush = Brush.radialGradient(
-                    colors = listOf(SignalIndigoDark.copy(alpha = 0.24f), Color.Transparent),
+                    colors = listOf(extended.heroRadialTint, Color.Transparent),
                     center = Offset(size.width * 0.88f, size.height * 0.12f),
                     radius = size.width * 0.55f,
                   ),
@@ -190,7 +184,7 @@ fun EarningsScreen(
                 Text(
                   text = "AVAILABLE EARNINGS",
                   style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
-                  color = ViewfinderMuted,
+                  color = extended.heroSecondaryText,
                 )
                 Row(
                   verticalAlignment = Alignment.Bottom,
@@ -199,18 +193,18 @@ fun EarningsScreen(
                   Text(
                     text = EarningsEngine.formatUsdFromMicros(wallet.availableMicros),
                     style = TabularFigureLargeStyle,
-                    color = Color.White,
+                    color = extended.heroPrimaryText,
                     modifier = Modifier.testTag("earnings_total_balance"),
                   )
                   Surface(
-                    color = SignalIndigoDark.copy(alpha = 0.18f),
+                    color = extended.heroBadgeBg,
                     shape = RoundedCornerShape(999.dp),
                     modifier = Modifier.padding(bottom = 7.dp),
                   ) {
                     Text(
                       text = "USD",
                       style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                      color = SignalIndigoDark,
+                      color = extended.heroBadgeText,
                       modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
                     )
                   }
@@ -218,9 +212,9 @@ fun EarningsScreen(
               }
 
               Surface(
-                color = Color.White.copy(alpha = 0.08f),
+                color = extended.heroChipBg,
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                border = BorderStroke(1.dp, extended.heroChipBorder),
               ) {
                 Column(
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
@@ -229,12 +223,12 @@ fun EarningsScreen(
                   Text(
                     text = "${wallet.adCompletionCount} Ads",
                     style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
-                    color = LedgerJadeDark,
+                    color = extended.heroPositiveAccent,
                   )
                   Text(
                     text = "Completed",
                     style = MaterialTheme.typography.labelSmall,
-                    color = ViewfinderMuted,
+                    color = extended.heroSecondaryText,
                   )
                 }
               }
@@ -248,19 +242,19 @@ fun EarningsScreen(
               EarningsStatPill(
                 label = "Lifetime",
                 value = EarningsEngine.formatUsdFromMicros(wallet.lifetimeEarnedMicros),
-                valueColor = Color.White,
+                valueColor = extended.heroPrimaryText,
                 modifier = Modifier.weight(1f),
               )
               EarningsStatPill(
                 label = "Pending",
                 value = EarningsEngine.formatUsdFromMicros(wallet.pendingWithdrawalMicros),
-                valueColor = ReticleAmber,
+                valueColor = extended.heroWarningAccent,
                 modifier = Modifier.weight(1f),
               )
               EarningsStatPill(
                 label = "Withdrawn",
                 value = EarningsEngine.formatUsdFromMicros(wallet.withdrawnMicros),
-                valueColor = LedgerJadeDark,
+                valueColor = extended.heroPositiveAccent,
                 modifier = Modifier.weight(1f),
               )
             }
@@ -280,12 +274,12 @@ fun EarningsScreen(
                     "${EarningsEngine.formatUsdFromMicros(remaining)} more needed for $1.00 min"
                   },
                   style = MaterialTheme.typography.labelMedium,
-                  color = if (canWithdraw) LedgerJadeDark else Color.White.copy(alpha = 0.88f),
+                  color = if (canWithdraw) extended.heroPositiveAccent else extended.heroPrimaryText.copy(alpha = 0.85f),
                 )
                 Text(
                   text = "${(thresholdProgress * 100f).toInt()}%",
                   style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
-                  color = if (canWithdraw) LedgerJadeDark else ReticleAmber,
+                  color = if (canWithdraw) extended.heroPositiveAccent else extended.heroWarningAccent,
                 )
               }
               Box(
@@ -293,14 +287,14 @@ fun EarningsScreen(
                   .fillMaxWidth()
                   .height(8.dp)
                   .clip(RoundedCornerShape(4.dp))
-                  .background(Color.White.copy(alpha = 0.12f)),
+                  .background(extended.heroProgressTrack),
               ) {
                 Box(
                   modifier = Modifier
                     .fillMaxWidth(thresholdProgress)
                     .height(8.dp)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(if (canWithdraw) LedgerJadeDark else SignalIndigoDark),
+                    .background(if (canWithdraw) extended.heroPositiveAccent else extended.heroCtaBg),
                 )
               }
             }
@@ -319,14 +313,14 @@ fun EarningsScreen(
                   .testTag("earnings_watch_ad_button"),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                  containerColor = SignalIndigoDark,
-                  contentColor = MintOnDarkText,
+                  containerColor = extended.heroCtaBg,
+                  contentColor = extended.heroCtaFg,
                 ),
               ) {
                 if (adLoadState is RewardedAdLoadState.Loading || adLoadState is RewardedAdLoadState.Showing) {
                   CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
-                    color = MintOnDarkText,
+                    color = extended.heroCtaFg,
                     strokeWidth = 2.dp,
                   )
                 } else {
@@ -352,15 +346,15 @@ fun EarningsScreen(
                   .height(50.dp)
                   .testTag("earnings_open_scan_button"),
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                border = BorderStroke(1.dp, extended.heroSecondaryBtnBorder),
                 colors = ButtonDefaults.outlinedButtonColors(
-                  containerColor = Color.White.copy(alpha = 0.08f),
-                  contentColor = Color.White,
+                  containerColor = extended.heroSecondaryBtnBg,
+                  contentColor = extended.heroSecondaryBtnFg,
                 ),
               ) {
-                Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, tint = extended.heroSecondaryBtnFg, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Scan QR", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                Text("Scan QR", color = extended.heroSecondaryBtnFg, style = MaterialTheme.typography.labelLarge)
               }
             }
 
@@ -368,7 +362,7 @@ fun EarningsScreen(
               Text(
                 text = adLoadState.message,
                 style = MaterialTheme.typography.bodySmall,
-                color = ReticleAmber,
+                color = extended.heroWarningAccent,
               )
             }
           }
@@ -468,13 +462,13 @@ fun EarningsScreen(
                   Icon(
                     Icons.Rounded.WarningAmber,
                     contentDescription = null,
-                    tint = PrecisionAmberDark,
+                    tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.size(18.dp),
                   )
                   Text(
                     text = "Withdrawals require at least $1.00 USD available balance. Watch rewarded ads after scanning to reach $1.00.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
                   )
                 }
               }
@@ -689,11 +683,12 @@ private fun EarningsStatPill(
   valueColor: Color,
   modifier: Modifier = Modifier,
 ) {
+  val extended = LocalExtendedColors.current
   Surface(
     modifier = modifier,
-    color = Color.White.copy(alpha = 0.08f),
+    color = extended.heroChipBg,
     shape = RoundedCornerShape(12.dp),
-    border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.12f)),
+    border = BorderStroke(0.75.dp, extended.heroChipBorder),
   ) {
     Column(
       modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
@@ -702,7 +697,7 @@ private fun EarningsStatPill(
       Text(
         text = label,
         style = MaterialTheme.typography.labelSmall,
-        color = ViewfinderMuted,
+        color = extended.heroSecondaryText,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
       )

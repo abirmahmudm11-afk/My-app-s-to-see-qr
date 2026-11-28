@@ -90,17 +90,9 @@ import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatTimestamp
 import com.example.ui.components.sharedProductBounds
-import com.example.ui.theme.CobaltAccent
-import com.example.ui.theme.HeroMintVaultBrush
-import com.example.ui.theme.LedgerJadeDark
-import com.example.ui.theme.MintGlowBorderBrush
-import com.example.ui.theme.MintOnDarkText
-import com.example.ui.theme.PrecisionAmberDark
-import com.example.ui.theme.ReticleAmber
-import com.example.ui.theme.SignalIndigoDark
+import com.example.ui.theme.LocalExtendedColors
 import com.example.ui.theme.TabularDataStyle
 import com.example.ui.theme.TabularFigureLargeStyle
-import com.example.ui.theme.ViewfinderMuted
 import com.example.ui.viewmodel.MainUiState
 
 @Composable
@@ -122,6 +114,7 @@ fun HomeScreen(
   val unreadCount = remember(uiState.notifications) { uiState.notifications.count { !it.read } }
   val market = remember(uiState.preferences.countryCode) { MarketConfig.findByCountry(uiState.preferences.countryCode) }
   val reducedMotion = uiState.preferences.reducedMotionEnabled
+  val extended = LocalExtendedColors.current
   var chartTab by remember { mutableIntStateOf(0) }
   val animatedAvailablePoints by animateIntAsState(
     targetValue = uiState.wallet.availablePoints.toInt(),
@@ -234,21 +227,21 @@ fun HomeScreen(
         }
       }
 
-      // Holographic Mint Vault Balance Card
+      // Theme-Adaptive Vault Balance Card
       item {
         Surface(
           shape = RoundedCornerShape(24.dp),
           color = Color.Transparent,
-          border = BorderStroke(0.9.dp, MintGlowBorderBrush),
+          border = BorderStroke(1.dp, extended.heroBorderBrush),
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .background(HeroMintVaultBrush)
+              .background(extended.heroBrush)
               .drawBehind {
                 drawCircle(
                   brush = Brush.radialGradient(
-                    colors = listOf(SignalIndigoDark.copy(alpha = 0.24f), Color.Transparent),
+                    colors = listOf(extended.heroRadialTint, Color.Transparent),
                     center = Offset(size.width * 0.9f, size.height * 0.1f),
                     radius = size.width * 0.52f,
                   ),
@@ -268,7 +261,7 @@ fun HomeScreen(
                 Text(
                   text = "AD EARNINGS (10% SHARE)",
                   style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
-                  color = ViewfinderMuted,
+                  color = extended.heroSecondaryText,
                 )
                 Row(
                   verticalAlignment = Alignment.Bottom,
@@ -277,18 +270,18 @@ fun HomeScreen(
                   Text(
                     text = EarningsEngine.formatUsdFromMicros(uiState.earningsWallet.availableMicros),
                     style = TabularFigureLargeStyle,
-                    color = Color.White,
+                    color = extended.heroPrimaryText,
                     modifier = Modifier.testTag("home_earnings_balance_value"),
                   )
                   Surface(
-                    color = SignalIndigoDark.copy(alpha = 0.18f),
+                    color = extended.heroBadgeBg,
                     shape = RoundedCornerShape(999.dp),
                     modifier = Modifier.padding(bottom = 7.dp),
                   ) {
                     Text(
                       text = "USDT",
                       style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                      color = SignalIndigoDark,
+                      color = extended.heroBadgeText,
                       modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
                     )
                   }
@@ -296,7 +289,7 @@ fun HomeScreen(
                 Text(
                   text = "Min $1.00 Binance BEP-20 payout · $animatedAvailablePoints PTS",
                   style = MaterialTheme.typography.labelSmall,
-                  color = ViewfinderMuted,
+                  color = extended.heroSecondaryText,
                 )
               }
 
@@ -304,9 +297,9 @@ fun HomeScreen(
                 modifier = Modifier
                   .clip(RoundedCornerShape(12.dp))
                   .bounceClickable(onClick = onOpenRewards),
-                color = Color.White.copy(alpha = 0.08f),
+                color = extended.heroChipBg,
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                border = BorderStroke(1.dp, extended.heroChipBorder),
               ) {
                 Column(
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
@@ -315,12 +308,12 @@ fun HomeScreen(
                   Text(
                     text = "${uiState.earningsWallet.adCompletionCount} Ads",
                     style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
-                    color = LedgerJadeDark,
+                    color = extended.heroPositiveAccent,
                   )
                   Text(
                     text = "$animatedPendingPoints PTS pend.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = ReticleAmber,
+                    color = extended.heroWarningAccent,
                   )
                 }
               }
@@ -338,8 +331,8 @@ fun HomeScreen(
                   .testTag("home_scan_item_button"),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                  containerColor = SignalIndigoDark,
-                  contentColor = MintOnDarkText,
+                  containerColor = extended.heroCtaBg,
+                  contentColor = extended.heroCtaFg,
                 ),
               ) {
                 Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -354,20 +347,20 @@ fun HomeScreen(
                   .height(50.dp)
                   .testTag("home_open_earnings_button"),
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                border = BorderStroke(1.dp, extended.heroSecondaryBtnBorder),
                 colors = ButtonDefaults.outlinedButtonColors(
-                  containerColor = Color.White.copy(alpha = 0.08f),
-                  contentColor = Color.White,
+                  containerColor = extended.heroSecondaryBtnBg,
+                  contentColor = extended.heroSecondaryBtnFg,
                 ),
               ) {
                 Icon(
                   Icons.Rounded.Paid,
                   contentDescription = null,
-                  tint = Color.White,
+                  tint = extended.heroSecondaryBtnFg,
                   modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(7.dp))
-                Text("Withdraw", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                Text("Withdraw", color = extended.heroSecondaryBtnFg, style = MaterialTheme.typography.labelLarge)
               }
             }
 
@@ -382,10 +375,10 @@ fun HomeScreen(
                   .height(42.dp)
                   .testTag("home_watch_ad_button"),
                 shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, SignalIndigoDark.copy(alpha = 0.45f)),
+                border = BorderStroke(1.dp, extended.heroBadgeText.copy(alpha = 0.35f)),
                 colors = ButtonDefaults.outlinedButtonColors(
-                  containerColor = SignalIndigoDark.copy(alpha = 0.12f),
-                  contentColor = SignalIndigoDark,
+                  containerColor = extended.heroBadgeBg,
+                  contentColor = extended.heroBadgeText,
                 ),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
               ) {
@@ -400,10 +393,10 @@ fun HomeScreen(
                   .height(42.dp)
                   .testTag("home_log_receipt_button"),
                 shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                border = BorderStroke(1.dp, extended.heroChipBorder),
                 colors = ButtonDefaults.outlinedButtonColors(
-                  containerColor = Color.White.copy(alpha = 0.06f),
-                  contentColor = Color.White,
+                  containerColor = extended.heroChipBg,
+                  contentColor = extended.heroPrimaryText,
                 ),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
               ) {
@@ -425,7 +418,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.Rounded.Search,
             label = "Discover",
-            accent = SignalIndigoDark,
+            accent = extended.bentoDiscoverAccent,
             onClick = onOpenDiscover,
             modifier = Modifier
               .weight(1f)
@@ -434,7 +427,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.Rounded.Paid,
             label = "Earnings",
-            accent = LedgerJadeDark,
+            accent = extended.bentoEarningsAccent,
             onClick = onOpenEarnings,
             modifier = Modifier
               .weight(1f)
@@ -443,7 +436,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.Rounded.AccountBalanceWallet,
             label = "Wallet",
-            accent = CobaltAccent,
+            accent = extended.bentoWalletAccent,
             onClick = onOpenRewards,
             modifier = Modifier
               .weight(1f)
@@ -452,7 +445,7 @@ fun HomeScreen(
           QuickAccessTile(
             icon = Icons.Rounded.History,
             label = "History",
-            accent = PrecisionAmberDark,
+            accent = extended.bentoHistoryAccent,
             onClick = onOpenScanHistory,
             modifier = Modifier
               .weight(1f)
@@ -535,7 +528,7 @@ fun HomeScreen(
         item {
           EmptyScanWelcomeCard(
             onOpenScan = onOpenScan,
-            onTryPopularCode = onOpenProduct,
+            onOpenDiscover = onOpenDiscover,
           )
         }
       } else {
@@ -610,7 +603,7 @@ fun HomeScreen(
 @Composable
 private fun EmptyScanWelcomeCard(
   onOpenScan: () -> Unit,
-  onTryPopularCode: (String) -> Unit,
+  onOpenDiscover: () -> Unit,
 ) {
   Surface(
     shape = RoundedCornerShape(18.dp),
@@ -642,7 +635,7 @@ private fun EmptyScanWelcomeCard(
             color = MaterialTheme.colorScheme.onSurface,
           )
           Text(
-            text = "Aim the barcode camera or tap a sample item below to compare live store prices.",
+            text = "Aim the barcode camera or search the live Open Food Facts catalog to compare real store prices.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -651,31 +644,23 @@ private fun EmptyScanWelcomeCard(
 
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         AnimatedOutlinedButton(
-          onClick = { onTryPopularCode("3017620422003") },
+          onClick = onOpenDiscover,
           modifier = Modifier.weight(1f),
           shape = RoundedCornerShape(10.dp),
         ) {
-          Text("Try Nutella")
+          Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Live Catalog")
         }
-        AnimatedOutlinedButton(
-          onClick = { onTryPopularCode("5449000000996") },
+        AnimatedButton(
+          onClick = onOpenScan,
           modifier = Modifier.weight(1f),
           shape = RoundedCornerShape(10.dp),
         ) {
-          Text("Try Coca-Cola")
+          Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Scan Now", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
         }
-      }
-
-      AnimatedButton(
-        onClick = onOpenScan,
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(50.dp),
-        shape = RoundedCornerShape(12.dp),
-      ) {
-        Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Open Barcode Scanner", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
       }
     }
   }

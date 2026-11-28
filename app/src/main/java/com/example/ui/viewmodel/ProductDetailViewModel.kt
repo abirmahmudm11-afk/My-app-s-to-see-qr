@@ -29,7 +29,6 @@ data class ProductDetailUiState(
   val isComparingOffers: Boolean = false,
   val hasComparedOffers: Boolean = false,
   val comparedOffers: List<ComparedOffer> = emptyList(),
-  val includesSimulatedRetailers: Boolean = false,
   val compareNotice: String? = null,
   val feedback: String? = null,
 )
@@ -124,7 +123,6 @@ class ProductDetailViewModel(private val container: AppContainer) : ViewModel() 
         isComparingOffers = false,
         hasComparedOffers = true,
         comparedOffers = result.offers,
-        includesSimulatedRetailers = result.includesSimulatedRetailers,
         compareNotice = result.apiNotice,
       )
       launch {

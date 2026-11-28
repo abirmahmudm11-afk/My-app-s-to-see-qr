@@ -87,11 +87,9 @@ import coil.compose.AsyncImage
 import com.example.data.model.CatalogProduct
 import com.example.data.model.ReceiptReviewStatus
 import com.example.data.model.VerificationStatus
-import com.example.ui.theme.CobaltAccent
 import com.example.ui.theme.LocalAnimatedVisibilityScope
 import com.example.ui.theme.LocalReducedMotion
 import com.example.ui.theme.LocalSharedTransitionScope
-import com.example.ui.theme.SignalIndigoDark
 import com.example.ui.theme.TabularDataStyle
 import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
@@ -102,28 +100,19 @@ fun Modifier.atmosphericBackdrop(): Modifier = composed {
   val bgColor = MaterialTheme.colorScheme.background
   val primaryGlow = MaterialTheme.colorScheme.primary
   val isDark = bgColor.luminance() < 0.2f
-  val mintAlpha = if (isDark) 0.14f else 0.10f
-  val cobaltAlpha = if (isDark) 0.14f else 0.08f
 
-  background(bgColor).drawBehind {
-    drawCircle(
-      brush = Brush.radialGradient(
-        colors = listOf(primaryGlow.copy(alpha = mintAlpha), Color.Transparent),
-        center = Offset(size.width * 0.15f, size.height * 0.08f),
-        radius = size.maxDimension * 0.55f,
-      ),
-      radius = size.maxDimension * 0.55f,
-      center = Offset(size.width * 0.15f, size.height * 0.08f),
-    )
-    drawCircle(
-      brush = Brush.radialGradient(
-        colors = listOf(CobaltAccent.copy(alpha = cobaltAlpha), Color.Transparent),
-        center = Offset(size.width * 0.92f, size.height * 0.28f),
-        radius = size.maxDimension * 0.5f,
-      ),
-      radius = size.maxDimension * 0.5f,
-      center = Offset(size.width * 0.92f, size.height * 0.28f),
-    )
+  if (!isDark) {
+    background(bgColor)
+  } else {
+    background(bgColor).drawBehind {
+      drawRect(
+        brush = Brush.verticalGradient(
+          colors = listOf(primaryGlow.copy(alpha = 0.05f), Color.Transparent),
+          startY = 0f,
+          endY = size.height * 0.26f,
+        ),
+      )
+    }
   }
 }
 
@@ -299,7 +288,7 @@ fun SlidingSegmentedPillBar(
 
 @Composable
 fun LivePulseDot(
-  color: Color = SignalIndigoDark,
+  color: Color = MaterialTheme.colorScheme.primary,
   size: Dp = 7.dp,
   modifier: Modifier = Modifier,
 ) {
@@ -574,12 +563,12 @@ fun SandboxCashbackBanner(modifier: Modifier = Modifier) {
       }
       Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-          text = "Sandbox Point Ledger",
+          text = "Verified Rewards Ledger",
           style = MaterialTheme.typography.titleSmall,
           color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-          text = "Points (PTS) track verified receipts and campaign checks in Firestore. Non-cash demo currency.",
+          text = "Points (PTS) track verified receipts and active partner campaigns in Firestore.",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

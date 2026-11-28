@@ -71,7 +71,7 @@ interface OpenFoodFactsApi {
 
   @GET("api/v2/search")
   suspend fun searchProductsV2(
-    @Query("search_terms") searchTerms: String = "",
+    @Query("search_terms") searchTerms: String? = null,
     @Query("categories_tags_en") categoriesTagsEn: String? = null,
     @Query("sort_by") sortBy: String = "unique_scans_n",
     @Query("page_size") pageSize: Int = 24,

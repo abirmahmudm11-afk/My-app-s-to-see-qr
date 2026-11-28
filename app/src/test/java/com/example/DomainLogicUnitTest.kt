@@ -12,7 +12,6 @@ import com.example.data.model.RewardTransaction
 import com.example.data.model.RewardWallet
 import com.example.data.model.ScanRecord
 import com.example.data.model.TransactionStatus
-import com.example.data.remote.SimulatedRetailerPriceApi
 import com.example.domain.BarcodeValidationResult
 import com.example.domain.BarcodeValidator
 import com.example.domain.CampaignEligibilityEngine
@@ -22,7 +21,6 @@ import com.example.domain.QuestMissionEngine
 import com.example.domain.SupportedBarcodeFormat
 import com.example.domain.WithdrawalValidationResult
 import com.google.firebase.Timestamp
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -146,7 +144,7 @@ class DomainLogicUnitTest {
     )
     assertEquals(PayoutStatus.PENDING.name, req.status)
     assertEquals(250L, req.pointsAmount)
-    assertEquals("PayPal Sandbox", PayoutMethod.fromString(req.payoutMethod).label)
+    assertEquals("PayPal", PayoutMethod.fromString(req.payoutMethod).label)
   }
 
   @Test
@@ -205,20 +203,6 @@ class DomainLogicUnitTest {
     assertEquals("400 g", record.quantity)
     assertEquals("E", record.nutriscoreGrade)
     assertEquals(1700000000000L, record.localTimestampMs)
-  }
-
-  @Test
-  fun simulatedRetailerPriceApiReturnsSortedLocalizedOffers() = runBlocking {
-    val api = SimulatedRetailerPriceApi()
-    val offers = api.searchPricesByBarcode(
-      barcode = "3017620422003",
-      productName = "Nutella",
-      brand = "Ferrero",
-      countryCode = "US",
-    )
-    assertTrue(offers.size >= 4)
-    assertTrue(offers.all { it.isSimulated && it.currencyCode == "USD" && it.price > 0.0 })
-    assertEquals(offers.sortedBy { it.price }, offers)
   }
 
   @Test

@@ -10,7 +10,6 @@ import com.example.data.model.VerificationStatus
 import com.example.data.remote.OpenFoodFactsApi
 import com.example.data.remote.OpenFoodFactsProductDto
 import com.example.data.remote.OpenPricesApi
-import com.example.data.remote.SimulatedRetailerPriceApi
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -53,13 +52,11 @@ data class ComparedOffer(
   val offerUrl: String = "",
   val firestoreOfferId: String? = null,
   val deliveryNote: String = "",
-  val isSimulated: Boolean = false,
 )
 
 data class OfferComparisonResult(
   val offers: List<ComparedOffer>,
   val apiNotice: String? = null,
-  val includesSimulatedRetailers: Boolean = false,
 )
 
 sealed interface ProductLookupOutcome {
@@ -84,7 +81,6 @@ class ProductRepository(
   private val api: OpenFoodFactsApi,
   private val openPricesApi: OpenPricesApi,
   private val cachedProductDao: CachedProductDao,
-  private val simulatedRetailerPriceApi: SimulatedRetailerPriceApi = SimulatedRetailerPriceApi(),
 ) {
   private val safeIdRegex = Regex("^[a-zA-Z0-9_-]+$")
 
@@ -150,16 +146,6 @@ class ProductRepository(
       return@withContext ProductLookupOutcome.Found(firestoreDoc, fromOfflineCache = false)
     }
 
-    val curated = curatedFallbackLookup(clean)
-    if (curated != null) {
-      cachedProductDao.upsertAll(listOf(CachedProductEntity.fromCatalogProduct(curated.first)))
-      return@withContext ProductLookupOutcome.Found(
-        product = curated.first,
-        fromOfflineCache = true,
-        apiMetadata = curated.second,
-      )
-    }
-
     if (remoteFailureMessage != null) {
       return@withContext ProductLookupOutcome.NetworkError(clean, remoteFailureMessage)
     }
@@ -169,24 +155,35 @@ class ProductRepository(
 
   suspend fun preloadLiveCatalog(forceRefresh: Boolean = false) = withContext(Dispatchers.IO) {
     val existingCount = runCatching { cachedProductDao.count() }.getOrDefault(0)
-    if (existingCount == 0 || forceRefresh) {
-      cachedProductDao.upsertAll(curatedCatalogEntries.map { CachedProductEntity.fromCatalogProduct(it.first) })
-    }
     if (existingCount >= 12 && !forceRefresh) return@withContext
 
     runCatching {
-      val response = withTimeoutOrNull(6_000L) {
-        api.searchProductsV2(searchTerms = "", sortBy = "unique_scans_n", pageSize = 24)
+      val response = withTimeoutOrNull(7_000L) {
+        api.searchProductsV2(searchTerms = null, sortBy = "unique_scans_n", pageSize = 24)
       }
       val liveProducts = response?.products
         ?.mapNotNull { dto ->
           val code = dto.code?.trim().orEmpty()
           if (code.isEmpty()) null else mapOffDto(code, dto)
         }
-        ?.filter { it.name.isNotBlank() && it.imageUrl.isNotBlank() }
+        ?.filter { it.name.isNotBlank() }
         .orEmpty()
       if (liveProducts.isNotEmpty()) {
         cachedProductDao.upsertAll(liveProducts.map { CachedProductEntity.fromCatalogProduct(it) })
+      }
+    }
+
+    if (auth.currentUser != null) {
+      runCatching {
+        val snap = withTimeoutOrNull(4_500L) {
+          db.collection("products_catalog").limit(20).get().await()
+        }
+        val firestoreProducts = snap?.documents?.mapNotNull { doc ->
+          doc.toObject(CatalogProduct::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+        }?.filter { it.barcode.isNotBlank() && it.name.isNotBlank() }.orEmpty()
+        if (firestoreProducts.isNotEmpty()) {
+          cachedProductDao.upsertAll(firestoreProducts.map { CachedProductEntity.fromCatalogProduct(it) })
+        }
       }
     }
   }
@@ -196,7 +193,7 @@ class ProductRepository(
     val remoteList = try {
       val v2 = withTimeoutOrNull(5_500L) {
         api.searchProductsV2(
-          searchTerms = "",
+          searchTerms = null,
           categoriesTagsEn = categoryTag,
           sortBy = "unique_scans_n",
           pageSize = 24,
@@ -221,11 +218,6 @@ class ProductRepository(
     val cachedMatches = cachedProductDao.search(fallbackKeyword).map { it.toCatalogProduct() }
     if (cachedMatches.isNotEmpty()) {
       return@withContext CatalogSearchResult(products = cachedMatches, fromOfflineCache = true)
-    }
-
-    val curatedMatches = curatedFallbackSearch(fallbackKeyword)
-    if (curatedMatches.isNotEmpty()) {
-      return@withContext CatalogSearchResult(products = curatedMatches, fromOfflineCache = true)
     }
 
     CatalogSearchResult(products = emptyList(), errorMessage = remoteError)
@@ -287,12 +279,6 @@ class ProductRepository(
     val cachedMatches = cachedProductDao.search(clean).map { it.toCatalogProduct() }
     if (cachedMatches.isNotEmpty()) {
       return@withContext CatalogSearchResult(products = cachedMatches, fromOfflineCache = true)
-    }
-
-    val curatedMatches = curatedFallbackSearch(clean)
-    if (curatedMatches.isNotEmpty()) {
-      cachedProductDao.upsertAll(curatedMatches.map { CachedProductEntity.fromCatalogProduct(it) })
-      return@withContext CatalogSearchResult(products = curatedMatches, fromOfflineCache = true)
     }
 
     CatalogSearchResult(
@@ -366,9 +352,9 @@ class ProductRepository(
     val cleanBarcode = barcode.trim()
     if (!isSafeId(cleanBarcode)) return@withContext
 
-    // Record genuine external / store observations (never pollute Firestore history with simulated placeholders)
+    // Record genuine external / store observations in Firestore price history
     val candidates = offers
-      .filter { !it.isSimulated && it.price > 0.0 && it.storeName.isNotBlank() }
+      .filter { it.price > 0.0 && it.storeName.isNotBlank() }
       .take(4)
     if (candidates.isEmpty()) return@withContext
 
@@ -540,35 +526,18 @@ class ProductRepository(
         } catch (e: CancellationException) {
           throw e
         } catch (_: Exception) {
-          apiNotice = "Open Prices live feed offline; showing retailer comparison quotes."
-          emptyList()
-        }
-      }
-
-      val simulatedDeferred = async {
-        runCatching {
-          simulatedRetailerPriceApi.searchPricesByBarcode(
-            barcode = clean,
-            productName = productName,
-            brand = brand,
-            countryCode = countryCode,
-          )
-        }.getOrElse { e ->
-          if (e is CancellationException) throw e
+          apiNotice = "Open Prices live feed unavailable right now. Check connection or report an in-store price."
           emptyList()
         }
       }
 
       merged.addAll(firestoreDeferred.await())
       merged.addAll(openPricesDeferred.await())
-      val simulatedOffers = simulatedDeferred.await()
-      merged.addAll(simulatedOffers)
 
       val sorted = merged.sortedBy { it.price }
       OfferComparisonResult(
         offers = sorted,
         apiNotice = apiNotice,
-        includesSimulatedRetailers = simulatedOffers.isNotEmpty(),
       )
     }
   }
@@ -731,193 +700,6 @@ class ProductRepository(
       attributionText = "Data © Open Food Facts contributors (ODbL)",
       verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
       submittedBy = "openfoodfacts",
-    )
-  }
-
-  private fun curatedFallbackLookup(barcode: String): Pair<CatalogProduct, ProductApiMetadata>? =
-    curatedCatalogEntries.firstOrNull { it.first.barcode == barcode }
-
-  private fun curatedFallbackSearch(query: String): List<CatalogProduct> {
-    val q = query.trim().lowercase()
-    if (q.isEmpty()) return emptyList()
-    return curatedCatalogEntries.map { it.first }.filter { p ->
-      p.name.lowercase().contains(q) ||
-        p.brand.lowercase().contains(q) ||
-        p.category.lowercase().contains(q) ||
-        p.barcode.contains(q)
-    }
-  }
-
-  private companion object {
-    val curatedCatalogEntries: List<Pair<CatalogProduct, ProductApiMetadata>> = listOf(
-      CatalogProduct(
-        id = "3017620422003",
-        barcode = "3017620422003",
-        name = "Nutella Hazelnut Spread with Cocoa",
-        brand = "Ferrero",
-        category = "Breakfast Spreads",
-        description = "Hazelnut spread with cocoa · Size: 400 g\nIngredients: Sugar, palm oil, hazelnuts (13%), skimmed milk powder (8.7%), fat-reduced cocoa (7.4%), emulsifier, vanillin.",
-        imageUrl = "https://images.openfoodfacts.org/images/products/301/762/042/2003/front_en.633.400.jpg",
-        manufacturer = "Ferrero",
-        countryOfOrigin = "Italy",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "400 g",
-        nutriscoreGrade = "E",
-        ecoscoreGrade = "D",
-        stores = listOf("Walmart", "Target", "Carrefour", "Amazon Fresh"),
-        packaging = "Glass jar",
-      ),
-      CatalogProduct(
-        id = "5449000000996",
-        barcode = "5449000000996",
-        name = "Coca-Cola Original Taste",
-        brand = "Coca-Cola",
-        category = "Beverages",
-        description = "Sparkling soft drink · Size: 330 ml\nIngredients: Carbonated water, sugar, caramel color, phosphoric acid, natural flavorings including caffeine.",
-        imageUrl = "https://images.openfoodfacts.org/images/products/544/900/000/0996/front_en.906.400.jpg",
-        manufacturer = "Coca-Cola Europacific Partners",
-        countryOfOrigin = "United States",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "330 ml",
-        nutriscoreGrade = "E",
-        ecoscoreGrade = "C",
-        stores = listOf("Walmart", "Target", "Tesco", "7-Eleven"),
-        packaging = "Aluminum can",
-      ),
-      CatalogProduct(
-        id = "3068320115160",
-        barcode = "3068320115160",
-        name = "Evian Natural Mineral Water",
-        brand = "Evian",
-        category = "Beverages",
-        description = "Pure alpine natural spring water bottled at source in Évian-les-Bains · Size: 1.5 L.",
-        imageUrl = "https://images.openfoodfacts.org/images/products/306/832/011/5160/front_fr.198.400.jpg",
-        manufacturer = "Danone Waters",
-        countryOfOrigin = "France",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "1.5 L",
-        nutriscoreGrade = "A",
-        ecoscoreGrade = "B",
-        stores = listOf("Whole Foods", "Carrefour", "Target"),
-        packaging = "Recyclable PET bottle",
-      ),
-      CatalogProduct(
-        id = "7622210449283",
-        barcode = "7622210449283",
-        name = "Prince Chocolate Cream Biscuits",
-        brand = "LU",
-        category = "Snacks",
-        description = "Whole wheat crispy sandwich biscuits filled with milk chocolate cream · Size: 300 g.",
-        imageUrl = "https://images.openfoodfacts.org/images/products/762/221/044/9283/front_fr.541.400.jpg",
-        manufacturer = "Mondelez International",
-        countryOfOrigin = "Belgium",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "300 g",
-        nutriscoreGrade = "D",
-        ecoscoreGrade = "D",
-        stores = listOf("Carrefour", "Auchan", "Amazon Fresh"),
-        packaging = "Recyclable wrapper",
-      ),
-      CatalogProduct(
-        id = "8076800195057",
-        barcode = "8076800195057",
-        name = "Barilla Spaghetti N°5",
-        brand = "Barilla",
-        category = "Organic & Pantry",
-        description = "Classic Italian durum wheat semolina spaghetti · Size: 500 g.",
-        imageUrl = "https://images.openfoodfacts.org/images/products/807/680/019/5057/front_it.344.400.jpg",
-        manufacturer = "Barilla G. e R. Fratelli",
-        countryOfOrigin = "Italy",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "500 g",
-        nutriscoreGrade = "A",
-        ecoscoreGrade = "B",
-        stores = listOf("Walmart", "Target", "Whole Foods", "Carrefour"),
-        packaging = "Paperboard box",
-      ),
-      CatalogProduct(
-        id = "7394376616013",
-        barcode = "7394376616013",
-        name = "Oatly Oat Drink Barista Edition",
-        brand = "Oatly",
-        category = "Dairy & Plant-Based",
-        description = "Creamy foamable plant-based oat drink fortified with calcium and vitamins D2, B2, B12 · Size: 1 L.",
-        imageUrl = "https://images.openfoodfacts.org/images/products/739/437/661/6013/front_en.281.400.jpg",
-        manufacturer = "Oatly AB",
-        countryOfOrigin = "Sweden",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "1 L",
-        nutriscoreGrade = "B",
-        ecoscoreGrade = "A",
-        stores = listOf("Whole Foods", "Target", "Tesco", "Woolworths"),
-        packaging = "Tetra Pak",
-      ),
-      CatalogProduct(
-        id = "3608580065424",
-        barcode = "3608580065424",
-        name = "Bonne Maman Strawberry Preserve",
-        brand = "Bonne Maman",
-        category = "Breakfast Spreads",
-        description = "Traditional French strawberry jam crafted with simple fruit ingredients · Size: 370 g.",
-        imageUrl = "https://images.openfoodfacts.org/images/products/360/858/006/5424/front_fr.148.400.jpg",
-        manufacturer = "Andros",
-        countryOfOrigin = "France",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "370 g",
-        nutriscoreGrade = "D",
-        ecoscoreGrade = "C",
-        stores = listOf("Target", "Whole Foods", "Carrefour", "Coles"),
-        packaging = "Glass jar",
-      ),
-      CatalogProduct(
-        id = "0041220576135",
-        barcode = "0041220576135",
-        name = "Organic Rolled Oats",
-        brand = "Nature's Pantry",
-        category = "Breakfast & Organic",
-        description = "100% Whole Grain Organic Rolled Oats · Size: 907 g.",
-        imageUrl = "",
-        manufacturer = "Nature's Pantry Foods",
-        countryOfOrigin = "United States",
-        dataProvider = "Open Food Facts",
-        attributionText = "Data © Open Food Facts contributors (ODbL)",
-        verificationStatus = VerificationStatus.OPEN_FOOD_FACTS.name,
-        submittedBy = "openfoodfacts",
-      ) to ProductApiMetadata(
-        quantity = "907 g",
-        nutriscoreGrade = "A",
-        ecoscoreGrade = "A",
-        stores = listOf("Whole Foods", "Target", "Walmart"),
-        packaging = "Recyclable pouch",
-      ),
     )
   }
 }

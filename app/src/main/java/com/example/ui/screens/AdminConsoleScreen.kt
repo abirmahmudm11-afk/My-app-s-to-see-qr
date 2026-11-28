@@ -90,9 +90,7 @@ import com.example.ui.components.SectionHeader
 import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatTimestamp
-import com.example.ui.theme.HeroMintVaultBrush
-import com.example.ui.theme.LedgerJadeDark
-import com.example.ui.theme.SignalIndigo
+import com.example.ui.theme.LocalExtendedColors
 import com.example.ui.theme.TabularDataStyle
 import com.example.ui.viewmodel.MainUiState
 
@@ -107,7 +105,6 @@ fun AdminConsoleScreen(
   onApproveReceipt: (ReceiptSubmission, Long) -> Unit,
   onRejectReceipt: (ReceiptSubmission, String) -> Unit,
   onCreateCampaign: (partnerName: String, title: String, terms: String, rewardPoints: Long, countries: List<String>) -> Unit,
-  onSeedStarterCampaigns: () -> Unit = {},
   onUpdateCampaignStatus: (Campaign, CampaignStatus) -> Unit,
   onVerifyProduct: (CatalogProduct) -> Unit,
   onCompleteDeletion: (DeletionRequest) -> Unit,
@@ -160,6 +157,8 @@ fun AdminConsoleScreen(
     it.status == WithdrawalStatus.PENDING.name || it.status == WithdrawalStatus.APPROVED.name
   }
 
+  val extended = LocalExtendedColors.current
+
   Column(
     modifier = Modifier
       .fillMaxSize()
@@ -168,20 +167,20 @@ fun AdminConsoleScreen(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(HeroMintVaultBrush)
+        .background(extended.heroBrush)
         .padding(horizontal = 12.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         AnimatedIconButton(onClick = onBack) {
-          Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
+          Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = extended.heroPrimaryText)
         }
         Column(modifier = Modifier.weight(1f)) {
-          Text("Admin Console", style = MaterialTheme.typography.titleLarge, color = Color.White)
+          Text("Admin Console", style = MaterialTheme.typography.titleLarge, color = extended.heroPrimaryText)
           Text(
             text = "Role: ${uiState.adminRole?.roleName ?: "UNAUTHORIZED"} · ${uiState.firebaseUser?.email ?: "Guest"}",
             style = MaterialTheme.typography.bodySmall,
-            color = LedgerJadeDark,
+            color = extended.heroPositiveAccent,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -209,13 +208,16 @@ fun AdminConsoleScreen(
                 .clip(RoundedCornerShape(8.dp))
                 .bounceClickable { selectedTab = idx }
                 .testTag("admin_tab_$slug"),
-              color = if (selected) SignalIndigo else Color.White.copy(alpha = 0.10f),
+              color = if (selected) extended.heroCtaBg else extended.heroChipBg,
+              border = BorderStroke(0.75.dp, if (selected) extended.heroCtaBg else extended.heroChipBorder),
               shape = RoundedCornerShape(8.dp),
             ) {
               Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
+                style = MaterialTheme.typography.labelMedium.copy(
+                  fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                ),
+                color = if (selected) extended.heroCtaFg else extended.heroPrimaryText,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
               )
             }
@@ -223,6 +225,7 @@ fun AdminConsoleScreen(
         }
       }
     }
+    HorizontalDivider(color = extended.dividerSubtle)
 
     if (uiState.adminRole == null) {
       Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -479,11 +482,7 @@ fun AdminConsoleScreen(
               }
 
               item {
-                SectionHeader(
-                  title = "Manage Campaigns (${uiState.allCampaigns.size})",
-                  actionLabel = if (uiState.allCampaigns.isEmpty()) "Seed Starters" else null,
-                  onAction = if (uiState.allCampaigns.isEmpty()) onSeedStarterCampaigns else null,
-                )
+                SectionHeader(title = "Manage Campaigns (${uiState.allCampaigns.size})")
               }
               if (uiState.allCampaigns.isEmpty()) {
                 item {
@@ -492,20 +491,13 @@ fun AdminConsoleScreen(
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
                   ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                      Text("No partner campaigns published yet", style = MaterialTheme.typography.titleMedium)
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                      Text("No active partner campaigns yet", style = MaterialTheme.typography.titleMedium)
                       Text(
-                        text = "Publish 3 starter retail campaigns immediately or create a custom campaign below.",
+                        text = "Create and publish a live partner campaign using the form below.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                       )
-                      AnimatedButton(
-                        onClick = onSeedStarterCampaigns,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                      ) {
-                        Text("Publish 3 Starter Campaigns")
-                      }
                     }
                   }
                 }

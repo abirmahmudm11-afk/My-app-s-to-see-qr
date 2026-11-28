@@ -192,7 +192,7 @@ class AdminRepository(
     val cleanNotes = adminNotes.trim().ifEmpty {
       when (newStatus) {
         PayoutStatus.APPROVED -> "Approved for payout fulfillment"
-        PayoutStatus.PAID -> "Marked fulfilled & paid in sandbox ledger"
+        PayoutStatus.PAID -> "Marked fulfilled & paid in rewards ledger"
         PayoutStatus.REJECTED -> "Payout declined & points refunded"
         PayoutStatus.PENDING -> "Pending review"
       }
@@ -591,7 +591,7 @@ class AdminRepository(
           "action" to "APPROVE_RECEIPT",
           "entityType" to "receipt",
           "entityId" to receipt.id,
-          "reason" to "Approved +$rewardPoints sandbox PTS",
+          "reason" to "Approved +$rewardPoints PTS",
           "timestamp" to FieldValue.serverTimestamp(),
         ),
       )
@@ -686,59 +686,6 @@ class AdminRepository(
           "entityType" to "campaign",
           "entityId" to ref.id,
           "reason" to "Launched ${title.trim()}".take(300),
-          "timestamp" to FieldValue.serverTimestamp(),
-        ),
-      )
-      batch.commit().await()
-    } catch (e: Exception) {
-      FirestoreErrorHandler.handleFirestoreError(e, OperationType.CREATE, "campaigns", auth)
-    }
-  }
-
-  suspend fun seedStarterCampaigns() {
-    val adminUid = auth.currentUser?.uid ?: throw IllegalStateException("Admin sign-in required.")
-    val now = Timestamp.now()
-    val end = Timestamp(Date(System.currentTimeMillis() + 60L * 86_400_000L))
-    val starters = listOf(
-      Triple("Ferrero Retail", "Breakfast Favorites Receipt Bonus", "Upload any grocery receipt containing hazelnut spreads or breakfast staples.") to 150L,
-      Triple("Beverage Collective", "Sparkling & Hydration Club", "Scan and submit any qualifying 6-pack or single bottle beverage receipt.") to 120L,
-      Triple("Organic Pantry Co.", "Whole Grain & Eco-Score A Bonus", "Earn bonus PTS on certified organic pantry purchases with Nutri-Score A or B.") to 200L,
-    )
-    try {
-      val batch = db.batch()
-      starters.forEach { (meta, pts) ->
-        val (partner, title, terms) = meta
-        val ref = db.collection("campaigns").document()
-        batch.set(
-          ref,
-          hashMapOf(
-            "partnerId" to adminUid,
-            "partnerName" to partner,
-            "title" to title,
-            "terms" to terms,
-            "rewardType" to "SANDBOX_POINTS",
-            "rewardPoints" to pts,
-            "maxPerUser" to 3,
-            "budgetLimitPoints" to 100_000L,
-            "eligibleCountries" to listOf("US", "GB", "CA", "DE", "FR", "AU", "BD", "GLOBAL"),
-            "eligibleBarcodes" to emptyList<String>(),
-            "eligibleCategories" to emptyList<String>(),
-            "status" to "ACTIVE",
-            "startAt" to now,
-            "endAt" to end,
-            "createdAt" to FieldValue.serverTimestamp(),
-            "updatedAt" to FieldValue.serverTimestamp(),
-          ),
-        )
-      }
-      batch.set(
-        db.collection("audit_logs").document(),
-        hashMapOf(
-          "actorId" to adminUid,
-          "action" to "SEED_STARTER_CAMPAIGNS",
-          "entityType" to "campaign",
-          "entityId" to "starter_pack",
-          "reason" to "Published 3 starter partner campaigns",
           "timestamp" to FieldValue.serverTimestamp(),
         ),
       )

@@ -350,20 +350,21 @@ fun DiscoverScreen(
                 style = MaterialTheme.typography.titleMedium,
               )
               Text(
-                text = "Scan a barcode or search a sample item to view nutrition details and store prices.",
+                text = "Scan a barcode or search the live Open Food Facts catalog to view nutrition details and store prices.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AnimatedOutlinedButton(
                   onClick = {
-                    query = "3017620422003"
-                    onSearch("3017620422003")
+                    query = ""
+                    selectedCategoryLabel = "All"
+                    onRefreshCatalog()
                   },
                   modifier = Modifier.weight(1f),
                   shape = RoundedCornerShape(10.dp),
                 ) {
-                  Text("Try Sample")
+                  Text("Refresh Feed")
                 }
                 AnimatedButton(
                   onClick = onOpenScan,
@@ -1382,11 +1383,7 @@ private fun OfferComparisonResultsCard(
         Column(modifier = Modifier.weight(1f)) {
           Text("Online Price Comparison", style = MaterialTheme.typography.titleLarge)
           Text(
-            text = if (detailState.includesSimulatedRetailers) {
-              "Simulated Retailer Quotes + Live Open Prices"
-            } else {
-              "Live Open Prices & Verified Store Offers"
-            },
+            text = "Live Open Prices & Verified Store Offers",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )

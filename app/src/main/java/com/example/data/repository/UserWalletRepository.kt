@@ -34,7 +34,7 @@ class UserWalletRepository(
     displayName: String,
     countryCode: String,
     languageCode: String,
-    darkThemeEnabled: Boolean = true,
+    darkThemeEnabled: Boolean = false,
   ) {
     val uid = auth.currentUser?.uid ?: return
     if (uid != userId) return
@@ -361,7 +361,7 @@ class UserWalletRepository(
       amountPoints = amountPoints,
       rewardTitle = rewardTitle,
       payoutMethod = PayoutMethod.GIFT_VOUCHER,
-      destinationHandle = auth.currentUser?.email ?: "In-App Sandbox Voucher",
+      destinationHandle = auth.currentUser?.email ?: "Verified Account Voucher",
       userDisplayName = auth.currentUser?.displayName ?: "Shopper",
     )
   }

@@ -84,7 +84,7 @@ object CampaignEligibilityEngine {
     return CampaignEligibilityResult(
       campaign,
       true,
-      "Eligible for +${campaign.rewardPoints} sandbox pts upon verified receipt.",
+      "Eligible for +${campaign.rewardPoints} PTS upon verified receipt.",
     )
   }
 }

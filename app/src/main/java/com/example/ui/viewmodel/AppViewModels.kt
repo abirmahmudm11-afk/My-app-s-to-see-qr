@@ -813,14 +813,6 @@ class MainAppViewModel(private val container: AppContainer) : ViewModel() {
     }
   }
 
-  fun seedStarterCampaigns() {
-    viewModelScope.launch {
-      runCatching { container.adminRepository.seedStarterCampaigns() }
-        .onSuccess { feedbackMessageFlow.value = "Published 3 starter partner campaigns." }
-        .onFailure { feedbackMessageFlow.value = it.message ?: "Failed to seed starter campaigns." }
-    }
-  }
-
   fun updateCampaignStatus(campaign: Campaign, newStatus: CampaignStatus) {
     viewModelScope.launch {
       runCatching { container.adminRepository.updateCampaignStatus(campaign, newStatus) }

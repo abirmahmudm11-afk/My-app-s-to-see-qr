@@ -79,17 +79,9 @@ import com.example.ui.components.SlidingSegmentedPillBar
 import com.example.ui.components.atmosphericBackdrop
 import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatTimestamp
-import com.example.ui.theme.HeroMintVaultBrush
-import com.example.ui.theme.LedgerDeckBrush
-import com.example.ui.theme.LedgerJadeDark
-import com.example.ui.theme.MintGlowBorderBrush
-import com.example.ui.theme.MintOnDarkText
-import com.example.ui.theme.ReticleAmber
-import com.example.ui.theme.SignalIndigo
-import com.example.ui.theme.SignalIndigoDark
+import com.example.ui.theme.LocalExtendedColors
 import com.example.ui.theme.TabularDataStyle
 import com.example.ui.theme.TabularFigureLargeStyle
-import com.example.ui.theme.ViewfinderMuted
 import com.example.ui.viewmodel.MainUiState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -111,9 +103,9 @@ fun RewardsScreen(
 ) {
   val vouchers = remember {
     listOf(
-      Triple("Grocery Sandbox Voucher", 100L, "$0 redemption fee · Instant payout ticket"),
-      Triple("Coffee Partner Credit", 250L, "$0 redemption fee · Auditable sandbox pass"),
-      Triple("Supermarket Bonus Tier", 500L, "$0 redemption fee · Priority sandbox reward"),
+      Triple("Grocery Partner Voucher", 100L, "$0 redemption fee · Instant payout ticket"),
+      Triple("Coffee Partner Credit", 250L, "$0 redemption fee · Verified partner pass"),
+      Triple("Supermarket Bonus Tier", 500L, "$0 redemption fee · Priority partner reward"),
     )
   }
 
@@ -218,118 +210,23 @@ fun RewardsScreen(
               )
             }
             Box(modifier = Modifier.weight(1.25f)) {
-              Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = Color.Transparent,
-                border = BorderStroke(0.9.dp, MintGlowBorderBrush),
-              ) {
-                Column(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .background(HeroMintVaultBrush)
-                    .padding(20.dp),
-                  verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top,
-                  ) {
-                    Column {
-                      Text("AVAILABLE BALANCE", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                      Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("${uiState.wallet.availablePoints}", style = TabularFigureLargeStyle, color = Color.White)
-                        Text("PTS", style = MaterialTheme.typography.titleMedium, color = SignalIndigoDark, modifier = Modifier.padding(bottom = 5.dp))
-                      }
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                      Text("${uiState.wallet.pendingPoints} PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = ReticleAmber)
-                      Text("Pending review", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                    }
+              RewardsWalletDeckCard(
+                availablePoints = uiState.wallet.availablePoints,
+                pendingPoints = uiState.wallet.pendingPoints,
+                totalEarnedPoints = totalEarnedPoints,
+                redeemedPoints = uiState.wallet.redeemedPoints,
+                isSignedIn = isSignedIn,
+                minCashoutLabel = "Min cashout ($0 fee)",
+                onSubmitReceipt = { onSubmitReceipt(null) },
+                onRequestPayoutClick = {
+                  if (isSignedIn) {
+                    payoutError = null
+                    showPayoutDialog = true
+                  } else {
+                    onSignInRequested()
                   }
-
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                  ) {
-                    Surface(
-                      modifier = Modifier.weight(1f),
-                      color = Color.White.copy(alpha = 0.08f),
-                      shape = RoundedCornerShape(12.dp),
-                    ) {
-                      Column(Modifier.padding(11.dp)) {
-                        Text(
-                          text = "$totalEarnedPoints PTS",
-                          style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
-                          color = SignalIndigoDark,
-                          modifier = Modifier.testTag("wallet_total_earned_points"),
-                        )
-                        Text("Total earned", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                      }
-                    }
-                    Surface(
-                      modifier = Modifier.weight(1f),
-                      color = Color.White.copy(alpha = 0.08f),
-                      shape = RoundedCornerShape(12.dp),
-                    ) {
-                      Column(Modifier.padding(11.dp)) {
-                        Text("${uiState.wallet.redeemedPoints} PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                        Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                      }
-                    }
-                    Surface(
-                      modifier = Modifier.weight(1f),
-                      color = Color.White.copy(alpha = 0.08f),
-                      shape = RoundedCornerShape(12.dp),
-                    ) {
-                      Column(Modifier.padding(11.dp)) {
-                        Text("100 PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                        Text("Min cashout ($0 fee)", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                      }
-                    }
-                  }
-
-                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AnimatedButton(
-                      onClick = { onSubmitReceipt(null) },
-                      modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp)
-                        .testTag("rewards_log_receipt_button"),
-                      shape = RoundedCornerShape(12.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = SignalIndigoDark, contentColor = MintOnDarkText),
-                    ) {
-                      Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
-                      Spacer(Modifier.width(6.dp))
-                      Text("Log Receipt", fontWeight = FontWeight.Bold)
-                    }
-                    AnimatedOutlinedButton(
-                      onClick = {
-                        if (isSignedIn) {
-                          payoutError = null
-                          showPayoutDialog = true
-                        } else {
-                          onSignInRequested()
-                        }
-                      },
-                      modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp)
-                        .testTag("rewards_request_payout_button"),
-                      shape = RoundedCornerShape(12.dp),
-                      border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
-                      colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color.White.copy(alpha = 0.08f),
-                        contentColor = Color.White,
-                      ),
-                    ) {
-                      Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                      Spacer(Modifier.width(6.dp))
-                      Text(if (isSignedIn) "Request Payout" else "Sign In", color = Color.White)
-                    }
-                  }
-                }
-              }
+                },
+              )
             }
           }
         }
@@ -343,118 +240,23 @@ fun RewardsScreen(
 
         // Authoritative Wallet Summary Deck
         item {
-          Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color.Transparent,
-            border = BorderStroke(0.9.dp, MintGlowBorderBrush),
-          ) {
-            Column(
-              modifier = Modifier
-                .fillMaxWidth()
-                .background(HeroMintVaultBrush)
-                .padding(20.dp),
-              verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-              ) {
-                Column {
-                  Text("AVAILABLE BALANCE", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                  Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("${uiState.wallet.availablePoints}", style = TabularFigureLargeStyle, color = Color.White)
-                    Text("PTS", style = MaterialTheme.typography.titleMedium, color = SignalIndigoDark, modifier = Modifier.padding(bottom = 5.dp))
-                  }
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                  Text("${uiState.wallet.pendingPoints} PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = ReticleAmber)
-                  Text("Pending review", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                }
+          RewardsWalletDeckCard(
+            availablePoints = uiState.wallet.availablePoints,
+            pendingPoints = uiState.wallet.pendingPoints,
+            totalEarnedPoints = totalEarnedPoints,
+            redeemedPoints = uiState.wallet.redeemedPoints,
+            isSignedIn = isSignedIn,
+            minCashoutLabel = "Min cashout",
+            onSubmitReceipt = { onSubmitReceipt(null) },
+            onRequestPayoutClick = {
+              if (isSignedIn) {
+                payoutError = null
+                showPayoutDialog = true
+              } else {
+                onSignInRequested()
               }
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-              ) {
-                Surface(
-                  modifier = Modifier.weight(1f),
-                  color = Color.White.copy(alpha = 0.08f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Column(Modifier.padding(11.dp)) {
-                    Text(
-                      text = "$totalEarnedPoints PTS",
-                      style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
-                      color = SignalIndigoDark,
-                      modifier = Modifier.testTag("wallet_total_earned_points"),
-                    )
-                    Text("Total earned", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                  }
-                }
-                Surface(
-                  modifier = Modifier.weight(1f),
-                  color = Color.White.copy(alpha = 0.08f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Column(Modifier.padding(11.dp)) {
-                    Text("${uiState.wallet.redeemedPoints} PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                    Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                  }
-                }
-                Surface(
-                  modifier = Modifier.weight(1f),
-                  color = Color.White.copy(alpha = 0.08f),
-                  shape = RoundedCornerShape(12.dp),
-                ) {
-                  Column(Modifier.padding(11.dp)) {
-                    Text("100 PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                    Text("Min cashout", style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
-                  }
-                }
-              }
-
-              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                AnimatedButton(
-                  onClick = { onSubmitReceipt(null) },
-                  modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
-                    .testTag("rewards_log_receipt_button"),
-                  shape = RoundedCornerShape(12.dp),
-                  colors = ButtonDefaults.buttonColors(containerColor = SignalIndigoDark, contentColor = MintOnDarkText),
-                ) {
-                  Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
-                  Spacer(Modifier.width(6.dp))
-                  Text("Log Receipt", fontWeight = FontWeight.Bold)
-                }
-                AnimatedOutlinedButton(
-                  onClick = {
-                    if (isSignedIn) {
-                      payoutError = null
-                      showPayoutDialog = true
-                    } else {
-                      onSignInRequested()
-                    }
-                  },
-                  modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
-                    .testTag("rewards_request_payout_button"),
-                  shape = RoundedCornerShape(12.dp),
-                  border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
-                  colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color.White.copy(alpha = 0.08f),
-                    contentColor = Color.White,
-                  ),
-                ) {
-                  Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                  Spacer(Modifier.width(6.dp))
-                  Text(if (isSignedIn) "Request Payout" else "Sign In", color = Color.White)
-                }
-              }
-            }
-          }
+            },
+          )
         }
       }
 
@@ -779,6 +581,128 @@ fun RewardsScreen(
         ) { Text("Cancel") }
       },
     )
+  }
+}
+
+@Composable
+private fun RewardsWalletDeckCard(
+  availablePoints: Long,
+  pendingPoints: Long,
+  totalEarnedPoints: Long,
+  redeemedPoints: Long,
+  isSignedIn: Boolean,
+  minCashoutLabel: String,
+  onSubmitReceipt: () -> Unit,
+  onRequestPayoutClick: () -> Unit,
+) {
+  val extended = LocalExtendedColors.current
+  Surface(
+    shape = RoundedCornerShape(24.dp),
+    color = Color.Transparent,
+    border = BorderStroke(1.dp, extended.heroBorderBrush),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(extended.heroBrush)
+        .padding(20.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+      ) {
+        Column {
+          Text("AVAILABLE BALANCE", style = MaterialTheme.typography.labelSmall, color = extended.heroSecondaryText)
+          Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("$availablePoints", style = TabularFigureLargeStyle, color = extended.heroPrimaryText)
+            Text("PTS", style = MaterialTheme.typography.titleMedium, color = extended.heroPositiveAccent, modifier = Modifier.padding(bottom = 5.dp))
+          }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+          Text("$pendingPoints PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = extended.heroWarningAccent)
+          Text("Pending review", style = MaterialTheme.typography.labelSmall, color = extended.heroSecondaryText)
+        }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Surface(
+          modifier = Modifier.weight(1f),
+          color = extended.heroChipBg,
+          border = BorderStroke(0.75.dp, extended.heroChipBorder),
+          shape = RoundedCornerShape(12.dp),
+        ) {
+          Column(Modifier.padding(11.dp)) {
+            Text(
+              text = "$totalEarnedPoints PTS",
+              style = TabularDataStyle.copy(fontWeight = FontWeight.Bold),
+              color = extended.heroPositiveAccent,
+              modifier = Modifier.testTag("wallet_total_earned_points"),
+            )
+            Text("Total earned", style = MaterialTheme.typography.labelSmall, color = extended.heroSecondaryText)
+          }
+        }
+        Surface(
+          modifier = Modifier.weight(1f),
+          color = extended.heroChipBg,
+          border = BorderStroke(0.75.dp, extended.heroChipBorder),
+          shape = RoundedCornerShape(12.dp),
+        ) {
+          Column(Modifier.padding(11.dp)) {
+            Text("$redeemedPoints PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = extended.heroPrimaryText)
+            Text("Redeemed", style = MaterialTheme.typography.labelSmall, color = extended.heroSecondaryText)
+          }
+        }
+        Surface(
+          modifier = Modifier.weight(1f),
+          color = extended.heroChipBg,
+          border = BorderStroke(0.75.dp, extended.heroChipBorder),
+          shape = RoundedCornerShape(12.dp),
+        ) {
+          Column(Modifier.padding(11.dp)) {
+            Text("100 PTS", style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = extended.heroPrimaryText)
+            Text(minCashoutLabel, style = MaterialTheme.typography.labelSmall, color = extended.heroSecondaryText)
+          }
+        }
+      }
+
+      Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        AnimatedButton(
+          onClick = onSubmitReceipt,
+          modifier = Modifier
+            .weight(1f)
+            .height(50.dp)
+            .testTag("rewards_log_receipt_button"),
+          shape = RoundedCornerShape(12.dp),
+          colors = ButtonDefaults.buttonColors(containerColor = extended.heroCtaBg, contentColor = extended.heroCtaFg),
+        ) {
+          Icon(Icons.AutoMirrored.Rounded.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Log Receipt", fontWeight = FontWeight.Bold)
+        }
+        AnimatedOutlinedButton(
+          onClick = onRequestPayoutClick,
+          modifier = Modifier
+            .weight(1f)
+            .height(50.dp)
+            .testTag("rewards_request_payout_button"),
+          shape = RoundedCornerShape(12.dp),
+          border = BorderStroke(1.dp, extended.heroSecondaryBtnBorder),
+          colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = extended.heroSecondaryBtnBg,
+            contentColor = extended.heroSecondaryBtnFg,
+          ),
+        ) {
+          Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = extended.heroSecondaryBtnFg, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(if (isSignedIn) "Request Payout" else "Sign In", color = extended.heroSecondaryBtnFg)
+        }
+      }
+    }
   }
 }
 

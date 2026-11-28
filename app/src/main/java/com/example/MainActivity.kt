@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
@@ -217,8 +218,29 @@ private fun Scan2MoneyRoot(container: AppContainer) {
     else -> RootStage.MAIN
   }
 
+  val isDarkTheme = uiState.preferences.darkThemeEnabled
+  LaunchedEffect(isDarkTheme) {
+    val hostActivity = activityContext as? ComponentActivity
+    if (hostActivity != null) {
+      runCatching {
+        val barStyle = if (isDarkTheme) {
+          SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        } else {
+          SystemBarStyle.light(
+            android.graphics.Color.TRANSPARENT,
+            android.graphics.Color.TRANSPARENT,
+          )
+        }
+        hostActivity.enableEdgeToEdge(
+          statusBarStyle = barStyle,
+          navigationBarStyle = barStyle,
+        )
+      }
+    }
+  }
+
   Scan2MoneyTheme(
-    darkTheme = uiState.preferences.darkThemeEnabled,
+    darkTheme = isDarkTheme,
     reducedMotion = reducedMotion,
   ) {
     AnimatedContent(
@@ -235,7 +257,7 @@ private fun Scan2MoneyRoot(container: AppContainer) {
           Box(
             modifier = Modifier
               .fillMaxSize()
-              .background(com.example.ui.theme.CarbonCanvas),
+              .background(MaterialTheme.colorScheme.background),
             contentAlignment = Alignment.Center,
           ) {
             Column(
@@ -244,23 +266,23 @@ private fun Scan2MoneyRoot(container: AppContainer) {
             ) {
               androidx.compose.material3.Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
-                color = com.example.ui.theme.CarbonSurface,
-                border = androidx.compose.foundation.BorderStroke(1.2.dp, com.example.ui.theme.MintGlowBorderBrush),
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
               ) {
                 Icon(
                   imageVector = Icons.Rounded.QrCodeScanner,
                   contentDescription = "SCAN2MONEY",
-                  tint = com.example.ui.theme.SignalIndigoDark,
+                  tint = MaterialTheme.colorScheme.primary,
                   modifier = Modifier.padding(16.dp).size(40.dp),
                 )
               }
               Text(
                 text = "SCAN2MONEY",
                 style = MaterialTheme.typography.headlineMedium,
-                color = com.example.ui.theme.CarbonInkPrimary,
+                color = MaterialTheme.colorScheme.onBackground,
               )
               CircularProgressIndicator(
-                color = com.example.ui.theme.SignalIndigoDark,
+                color = MaterialTheme.colorScheme.primary,
                 strokeWidth = 2.5.dp,
                 modifier = Modifier.size(24.dp),
               )
@@ -689,7 +711,6 @@ private fun Scan2MoneyRoot(container: AppContainer) {
                             onCreateCampaign = { partner, title, terms, pts, countries ->
                               mainViewModel.createCampaign(partner, title, terms, pts, countries)
                             },
-                            onSeedStarterCampaigns = { mainViewModel.seedStarterCampaigns() },
                             onUpdateCampaignStatus = { camp, status -> mainViewModel.updateCampaignStatus(camp, status) },
                             onVerifyProduct = { product -> mainViewModel.verifyCatalogProduct(product) },
                             onCompleteDeletion = { req -> mainViewModel.completeDeletionRequest(req) },

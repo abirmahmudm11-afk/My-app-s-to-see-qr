@@ -89,16 +89,8 @@ import com.example.ui.components.bounceClickable
 import com.example.ui.components.formatDetailedTimestamp
 import com.example.ui.components.formatTimestamp
 import com.example.ui.components.sharedProductBounds
-import com.example.ui.theme.CobaltAccent
-import com.example.ui.theme.HeroMintVaultBrush
-import com.example.ui.theme.LedgerDeckBrush
-import com.example.ui.theme.LedgerJadeDark
-import com.example.ui.theme.MintGlowBorderBrush
-import com.example.ui.theme.MintOnDarkText
-import com.example.ui.theme.SignalIndigo
-import com.example.ui.theme.SignalIndigoDark
+import com.example.ui.theme.LocalExtendedColors
 import com.example.ui.theme.TabularDataStyle
-import com.example.ui.theme.ViewfinderMuted
 import com.example.ui.viewmodel.MainUiState
 
 @Composable
@@ -117,6 +109,7 @@ fun ProfileScreen(
   onSignOut: () -> Unit,
 ) {
   val market = MarketConfig.findByCountry(uiState.preferences.countryCode)
+  val extended = LocalExtendedColors.current
   val user = uiState.firebaseUser
   val displayName = user?.displayName?.takeIf { it.isNotBlank() }
     ?: user?.email?.substringBefore("@")
@@ -145,12 +138,12 @@ fun ProfileScreen(
         Surface(
           shape = RoundedCornerShape(22.dp),
           color = Color.Transparent,
-          border = BorderStroke(1.2.dp, MintGlowBorderBrush),
+          border = BorderStroke(1.dp, extended.heroBorderBrush),
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .background(HeroMintVaultBrush)
+              .background(extended.heroBrush)
               .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
           ) {
@@ -161,14 +154,14 @@ fun ProfileScreen(
               Surface(
                 modifier = Modifier.size(54.dp),
                 shape = CircleShape,
-                color = SignalIndigoDark.copy(alpha = 0.2f),
-                border = BorderStroke(1.5.dp, SignalIndigoDark),
+                color = extended.heroBadgeBg,
+                border = BorderStroke(1.5.dp, extended.heroPositiveAccent),
               ) {
                 Box(contentAlignment = Alignment.Center) {
                   Text(
                     text = initials,
                     style = MaterialTheme.typography.titleLarge,
-                    color = SignalIndigoDark,
+                    color = extended.heroBadgeText,
                   )
                 }
               }
@@ -176,12 +169,12 @@ fun ProfileScreen(
                 Text(
                   text = displayName,
                   style = MaterialTheme.typography.titleLarge,
-                  color = Color.White,
+                  color = extended.heroPrimaryText,
                 )
                 Text(
                   text = user?.email ?: "Local guest mode · on-device storage",
                   style = MaterialTheme.typography.bodySmall,
-                  color = ViewfinderMuted,
+                  color = extended.heroSecondaryText,
                 )
               }
             }
@@ -190,9 +183,9 @@ fun ProfileScreen(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-              ProfileStatCell("${uiState.wallet.availablePoints} PTS", "Balance", SignalIndigoDark, Modifier.weight(1f))
-              ProfileStatCell("${uiState.recentScans.size}", "Scans", CobaltAccent, Modifier.weight(1f))
-              ProfileStatCell(market.countryCode, market.currencyCode, Color.White, Modifier.weight(1f))
+              ProfileStatCell("${uiState.wallet.availablePoints} PTS", "Balance", extended.heroPositiveAccent, Modifier.weight(1f))
+              ProfileStatCell("${uiState.recentScans.size}", "Scans", extended.bentoWalletAccent, Modifier.weight(1f))
+              ProfileStatCell(market.countryCode, market.currencyCode, extended.heroPrimaryText, Modifier.weight(1f))
             }
 
             if (user == null) {
@@ -203,7 +196,7 @@ fun ProfileScreen(
                   .height(50.dp)
                   .testTag("profile_sign_in_button"),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = SignalIndigoDark, contentColor = MintOnDarkText),
+                colors = ButtonDefaults.buttonColors(containerColor = extended.heroCtaBg, contentColor = extended.heroCtaFg),
               ) {
                 Text("Continue with Google", fontWeight = FontWeight.Bold)
               }
@@ -215,15 +208,15 @@ fun ProfileScreen(
                   .height(50.dp)
                   .testTag("profile_sign_out_button"),
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                border = BorderStroke(1.dp, extended.heroSecondaryBtnBorder),
                 colors = ButtonDefaults.outlinedButtonColors(
-                  containerColor = Color.White.copy(alpha = 0.08f),
-                  contentColor = Color.White,
+                  containerColor = extended.heroSecondaryBtnBg,
+                  contentColor = extended.heroSecondaryBtnFg,
                 ),
               ) {
-                Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = extended.heroSecondaryBtnFg, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Sign Out", color = Color.White)
+                Text("Sign Out", color = extended.heroSecondaryBtnFg)
               }
             }
           }
@@ -313,11 +306,19 @@ fun ProfileScreen(
                     modifier = Modifier.padding(8.dp).size(18.dp),
                   )
                 }
-                Text("Dark Appearance", style = MaterialTheme.typography.titleMedium)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                  Text("Dark Appearance", style = MaterialTheme.typography.titleMedium)
+                  Text(
+                    text = if (uiState.preferences.darkThemeEnabled) "Obsidian charcoal dark theme" else "Clean white light theme",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
               }
               Switch(
                 checked = uiState.preferences.darkThemeEnabled,
                 onCheckedChange = onToggleDarkTheme,
+                modifier = Modifier.testTag("profile_dark_theme_switch"),
               )
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -392,14 +393,16 @@ private fun ProfileStatCell(
   accent: Color,
   modifier: Modifier = Modifier,
 ) {
+  val extended = LocalExtendedColors.current
   Surface(
     modifier = modifier,
-    color = Color.White.copy(alpha = 0.08f),
+    color = extended.heroChipBg,
+    border = BorderStroke(0.75.dp, extended.heroChipBorder),
     shape = RoundedCornerShape(10.dp),
   ) {
     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
       Text(value, style = TabularDataStyle.copy(fontWeight = FontWeight.Bold), color = accent)
-      Text(label, style = MaterialTheme.typography.labelSmall, color = ViewfinderMuted)
+      Text(label, style = MaterialTheme.typography.labelSmall, color = extended.heroSecondaryText)
     }
   }
 }
@@ -1159,9 +1162,9 @@ fun TermsRulesScreen(onBack: () -> Unit) {
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text("3. Sandbox Rewards Ledger", style = MaterialTheme.typography.titleMedium)
+            Text("3. Verified Rewards & Ad Earnings Ledger", style = MaterialTheme.typography.titleMedium)
             Text(
-              text = "Points (PTS) operate in Sandbox Rewards Mode and require admin review of SHA-256 hashed receipt submissions before credit.",
+              text = "Points (PTS) require admin review of SHA-256 hashed receipt submissions before credit, while completed rewarded ads credit 10% of ad value in USD toward Binance USDT BEP-20 withdrawals.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
